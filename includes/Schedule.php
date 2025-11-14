@@ -168,7 +168,7 @@ class Schedule {
         $sql = "SELECT
                     d.id as desk_id,
                     d.name as desk_name,
-                    div.name as division_name,
+                    division.name as division_name,
                     'first' as shift,
                     CASE
                         WHEN rs.id IS NOT NULL THEN rs.relief_dispatcher_id
@@ -183,7 +183,7 @@ class Schedule {
                         ELSE 'regular'
                     END as assignment_type
                 FROM desks d
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 LEFT JOIN job_assignments ja_first ON ja_first.desk_id = d.id
                     AND ja_first.shift = 'first'
                     AND ja_first.assignment_type = 'regular'
@@ -201,7 +201,7 @@ class Schedule {
                 SELECT
                     d.id as desk_id,
                     d.name as desk_name,
-                    div.name as division_name,
+                    division.name as division_name,
                     'second' as shift,
                     CASE
                         WHEN rs.id IS NOT NULL THEN rs.relief_dispatcher_id
@@ -216,7 +216,7 @@ class Schedule {
                         ELSE 'regular'
                     END as assignment_type
                 FROM desks d
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 LEFT JOIN job_assignments ja_second ON ja_second.desk_id = d.id
                     AND ja_second.shift = 'second'
                     AND ja_second.assignment_type = 'regular'
@@ -234,7 +234,7 @@ class Schedule {
                 SELECT
                     d.id as desk_id,
                     d.name as desk_name,
-                    div.name as division_name,
+                    division.name as division_name,
                     'third' as shift,
                     CASE
                         WHEN ar.id IS NOT NULL THEN ar.atw_dispatcher_id
@@ -252,7 +252,7 @@ class Schedule {
                         ELSE 'regular'
                     END as assignment_type
                 FROM desks d
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 LEFT JOIN job_assignments ja_third ON ja_third.desk_id = d.id
                     AND ja_third.shift = 'third'
                     AND ja_third.assignment_type = 'regular'
