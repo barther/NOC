@@ -86,12 +86,16 @@ class Dispatcher {
 
     /**
      * Recalculate all seniority ranks (use after bulk updates)
+     * @param bool $useTransaction - If false, skip transaction (caller handles it)
      */
-    public static function recalculateSeniorityRanks() {
+    public static function recalculateSeniorityRanks($useTransaction = true) {
         $sql = "SELECT id, seniority_date FROM dispatchers WHERE active = 1 ORDER BY seniority_date, id";
         $dispatchers = dbQueryAll($sql);
 
-        dbBeginTransaction();
+        if ($useTransaction) {
+            dbBeginTransaction();
+        }
+
         try {
             $rank = 1;
             foreach ($dispatchers as $dispatcher) {
@@ -99,10 +103,15 @@ class Dispatcher {
                 dbExecute($updateSql, [$rank, $dispatcher['id']]);
                 $rank++;
             }
-            dbCommit();
+
+            if ($useTransaction) {
+                dbCommit();
+            }
             return true;
         } catch (Exception $e) {
-            dbRollback();
+            if ($useTransaction) {
+                dbRollback();
+            }
             throw $e;
         }
     }

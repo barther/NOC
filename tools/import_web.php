@@ -314,8 +314,8 @@ try {
                     $importedCount++;
                 }
 
-                // Recalculate seniority
-                Dispatcher::recalculateSeniorityRanks();
+                // Recalculate seniority (false = don't start new transaction, we're already in one)
+                Dispatcher::recalculateSeniorityRanks(false);
 
                 dbCommit();
 
