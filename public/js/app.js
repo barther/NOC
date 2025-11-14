@@ -305,6 +305,7 @@ const App = {
                 <td><span id="assignment-${d.id}">Loading...</span></td>
                 <td>
                     <button class="btn btn-secondary" onclick="App.editDispatcher(${d.id})">Edit</button>
+                    <button class="btn btn-danger" onclick="App.deleteDispatcher(${d.id}, '${d.first_name} ${d.last_name}')">Delete</button>
                 </td>
             </tr>
         `).join('');
@@ -321,7 +322,7 @@ const App = {
                 </div>
                 <div class="toolbar-right">
                     <button class="btn btn-primary" onclick="App.showDeskModal()">Add Desk</button>
-                    <button class="btn btn-secondary" onclick="App.showDivisionModal()">Manage Divisions</button>
+                    <button class="btn btn-secondary" onclick="App.showManageDivisionsModal()">Manage Divisions</button>
                 </div>
             </div>
             <table>
@@ -360,6 +361,7 @@ const App = {
                 <td>
                     <button class="btn btn-secondary" onclick="App.manageDeskAssignments(${desk.id})">Manage Assignments</button>
                     <button class="btn btn-secondary" onclick="App.editDesk(${desk.id})">Edit</button>
+                    <button class="btn btn-danger" onclick="App.deleteDesk(${desk.id}, '${desk.name}')">Delete</button>
                 </td>
             </tr>
         `).join('');
@@ -1100,6 +1102,12 @@ const App = {
                     • Saturday & Sunday Second Shift<br>
                     • Saturday Third Shift
                 </div>
+                <div id="rest-days-option" style="margin-top: 15px; padding: 15px; background: var(--light-bg); border-radius: 5px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" name="configure_rest_days" value="1" style="margin-right: 10px; width: 18px; height: 18px;">
+                        <span><strong>Configure custom rest days</strong> (e.g., Tuesday & Wednesday instead of weekends)</span>
+                    </label>
+                </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
                     <button type="submit" class="btn btn-success">Assign</button>
@@ -1123,6 +1131,7 @@ const App = {
         const form = event.target;
         const assignmentType = form.assignment_type.value;
         const dispatcherId = form.dispatcher_id.value;
+        const configureRestDays = form.configure_rest_days && form.configure_rest_days.checked;
 
         try {
             if (assignmentType === 'relief') {
@@ -1131,17 +1140,25 @@ const App = {
                     relief_dispatcher_id: dispatcherId
                 });
                 this.showSuccess('Relief dispatcher assigned with standard schedule');
+                this.closeModal();
+                this.showView(this.currentView);
             } else {
-                await this.api('schedule_assign_job', {
-                    dispatcher_id: dispatcherId,
-                    desk_id: deskId,
-                    shift: assignmentType,
-                    assignment_type: 'regular'
-                });
-                this.showSuccess(`${assignmentType.charAt(0).toUpperCase() + assignmentType.slice(1)} shift assigned successfully`);
+                // If user wants to configure rest days, show that modal
+                if (configureRestDays) {
+                    this.configureRestDays(deskId, assignmentType, dispatcherId);
+                } else {
+                    // Standard assignment without custom rest days
+                    await this.api('schedule_assign_job', {
+                        dispatcher_id: dispatcherId,
+                        desk_id: deskId,
+                        shift: assignmentType,
+                        assignment_type: 'regular'
+                    });
+                    this.showSuccess(`${assignmentType.charAt(0).toUpperCase() + assignmentType.slice(1)} shift assigned successfully`);
+                    this.closeModal();
+                    this.showView(this.currentView);
+                }
             }
-            this.closeModal();
-            this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to assign: ' + error.message);
         }
@@ -1335,6 +1352,189 @@ const App = {
             this.loadHolddowns();
         } catch (error) {
             this.showError('Failed to award hold-down: ' + error.message);
+        }
+    },
+
+    /**
+     * Delete dispatcher
+     */
+    deleteDispatcher: async function(id, name) {
+        if (!confirm(`Are you sure you want to delete dispatcher "${name}"?\n\nThis will set them as inactive.`)) return;
+
+        try {
+            const dispatcher = this.data.dispatchers.find(d => d.id == id);
+            await this.api('dispatcher_update', {
+                id: id,
+                employee_number: dispatcher.employee_number,
+                first_name: dispatcher.first_name,
+                last_name: dispatcher.last_name,
+                seniority_date: dispatcher.seniority_date,
+                classification: dispatcher.classification,
+                active: false
+            });
+            this.showSuccess('Dispatcher deleted successfully');
+            await this.loadDispatchers();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to delete dispatcher: ' + error.message);
+        }
+    },
+
+    /**
+     * Delete desk
+     */
+    deleteDesk: async function(id, name) {
+        if (!confirm(`Are you sure you want to delete desk "${name}"?\n\nThis will set it as inactive.`)) return;
+
+        try {
+            await this.api('desk_delete', { id: id });
+            this.showSuccess('Desk deleted successfully');
+            await this.loadDesks();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to delete desk: ' + error.message);
+        }
+    },
+
+    /**
+     * Delete division
+     */
+    deleteDivision: async function(id, name) {
+        if (!confirm(`Are you sure you want to delete division "${name}"?\n\nThis will set it as inactive. All desks in this division will remain.`)) return;
+
+        try {
+            await this.api('division_delete', { id: id });
+            this.showSuccess('Division deleted successfully');
+            await this.loadDivisions();
+            await this.loadDesks();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to delete division: ' + error.message);
+        }
+    },
+
+    /**
+     * Show manage divisions modal with list
+     */
+    showManageDivisionsModal: function() {
+        let html = `
+            <div style="margin-bottom: 20px;">
+                <button class="btn btn-primary" onclick="App.showDivisionModal(); return false;">Add New Division</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        if (this.data.divisions.length === 0) {
+            html += '<tr><td colspan="3" class="text-center">No divisions found</td></tr>';
+        } else {
+            this.data.divisions.forEach(div => {
+                html += `
+                    <tr>
+                        <td><strong>${div.code}</strong></td>
+                        <td>${div.name}</td>
+                        <td>
+                            <button class="btn btn-danger" onclick="App.deleteDivision(${div.id}, '${div.name}')">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `
+                </tbody>
+            </table>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+            </div>
+        `;
+
+        this.showModal('Manage Divisions', html);
+    },
+
+    /**
+     * Configure rest days for a job assignment
+     */
+    configureRestDays: function(deskId, shift, dispatcherId) {
+        const desk = this.data.desks.find(d => d.id == deskId);
+        const dispatcher = this.data.dispatchers.find(d => d.id == dispatcherId);
+
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        const html = `
+            <form id="rest-days-form" onsubmit="App.submitRestDaysForm(event, ${deskId}, '${shift}', ${dispatcherId}); return false;">
+                <div class="alert alert-info">
+                    <strong>Dispatcher:</strong> ${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}<br>
+                    <strong>Desk:</strong> ${desk.name} (${desk.code})<br>
+                    <strong>Shift:</strong> ${shift.charAt(0).toUpperCase() + shift.slice(1)}
+                </div>
+                <p><strong>Select rest days (days OFF) for this assignment:</strong></p>
+                <p><small>In a typical 5-day work week, select 2 rest days. For example: Tuesday and Wednesday.</small></p>
+                <div style="margin: 20px 0;">
+                    ${daysOfWeek.map((day, index) => `
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="rest_day_${index}" value="1"
+                                       style="margin-right: 10px; width: 18px; height: 18px;">
+                                <span style="font-size: 1.1em;">${day}</span>
+                            </label>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="alert alert-warning">
+                    <strong>Note:</strong> Days NOT checked will be work days. Relief dispatcher coverage (if assigned) takes precedence over these settings.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Rest Days</button>
+                </div>
+            </form>
+        `;
+
+        this.showModal('Configure Rest Days', html);
+    },
+
+    submitRestDaysForm: async function(event, deskId, shift, dispatcherId) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+
+        const restDays = [];
+        for (let i = 0; i < 7; i++) {
+            if (formData.get(`rest_day_${i}`) === '1') {
+                restDays.push(i);
+            }
+        }
+
+        try {
+            // First create the job assignment
+            const result = await this.api('schedule_assign_job', {
+                dispatcher_id: dispatcherId,
+                desk_id: deskId,
+                shift: shift,
+                assignment_type: 'regular'
+            });
+
+            // Then save rest days if any were selected
+            if (restDays.length > 0) {
+                await this.api('job_set_rest_days', {
+                    job_assignment_id: result.id,
+                    rest_days: restDays
+                });
+            }
+
+            this.showSuccess(`${shift.charAt(0).toUpperCase() + shift.slice(1)} shift assigned with custom rest days`);
+            this.closeModal();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to assign: ' + error.message);
         }
     }
 };
