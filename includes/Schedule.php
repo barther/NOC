@@ -95,8 +95,9 @@ class Schedule {
             self::setReliefSchedule($deskId, $reliefDispatcherId, 6, 'second'); // Saturday
             self::setReliefSchedule($deskId, $reliefDispatcherId, 0, 'second'); // Sunday
 
-            // Saturday third shift only (going into Sunday morning)
+            // Saturday and Sunday third shift
             self::setReliefSchedule($deskId, $reliefDispatcherId, 6, 'third');  // Saturday night
+            self::setReliefSchedule($deskId, $reliefDispatcherId, 0, 'third');  // Sunday night
 
             dbCommit();
             return true;
