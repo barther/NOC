@@ -583,6 +583,18 @@ const App = {
                     </div>
                 </div>
             </div>
+
+            <div class="card mt-20">
+                <div class="card-header">CSV Data Import</div>
+                <div class="card-body">
+                    <p>Import dispatcher data from <strong>data.csv</strong> file (must be in the NOC root directory).</p>
+                    <p><small>This will import dispatchers, divisions, desks, and assignments from the CSV file.</small></p>
+                    <div id="import-status" style="margin: 15px 0;"></div>
+                    <button class="btn btn-secondary" onclick="App.validateCSV()">Validate CSV</button>
+                    <button class="btn btn-primary" onclick="App.importCSV()" id="import-btn" disabled>Import Data</button>
+                </div>
+            </div>
+
             <div class="mt-20">
                 <button class="btn btn-primary" onclick="App.saveConfig()">Save Configuration</button>
             </div>
@@ -1679,6 +1691,105 @@ const App = {
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to update rest days: ' + error.message);
+        }
+    },
+
+    /**
+     * Validate CSV file
+     */
+    validateCSV: async function() {
+        const statusDiv = document.getElementById('import-status');
+        const importBtn = document.getElementById('import-btn');
+
+        statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Validating CSV...</p></div>';
+
+        try {
+            const response = await fetch('tools/import_web.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'validate' })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                const stats = result.stats;
+                const divisionsHtml = Object.keys(stats.divisions).slice(0, 5).join(', ') +
+                    (Object.keys(stats.divisions).length > 5 ? '...' : '');
+
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>CSV Validation Successful!</strong><br>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li>Total records: ${stats.total}</li>
+                            <li>Active dispatchers: <strong>${stats.active}</strong></li>
+                            <li>Inactive (will be skipped): ${stats.inactive}</li>
+                            <li>Divisions: ${stats.division_count} (${divisionsHtml})</li>
+                            <li>Unique desks: ${stats.desks}</li>
+                        </ul>
+                        <p><strong>Ready to import ${stats.active} dispatchers.</strong></p>
+                    </div>
+                `;
+                importBtn.disabled = false;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Validation failed: ${result.error}</div>`;
+                importBtn.disabled = true;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            importBtn.disabled = true;
+        }
+    },
+
+    /**
+     * Import CSV data
+     */
+    importCSV: async function() {
+        if (!confirm('This will import all dispatcher data from data.csv.\n\nIf you already have data, this may create duplicates.\n\nContinue?')) {
+            return;
+        }
+
+        const statusDiv = document.getElementById('import-status');
+        const importBtn = document.getElementById('import-btn');
+
+        statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Importing data... This may take a few minutes.</p></div>';
+        importBtn.disabled = true;
+
+        try {
+            const response = await fetch('tools/import_web.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'import' })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>Import Completed Successfully!</strong><br>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li>Imported: <strong>${result.imported}</strong> dispatchers</li>
+                            <li>Skipped: ${result.skipped} records</li>
+                            <li>Created: ${result.divisions} divisions</li>
+                            <li>Created: ${result.desks} desks</li>
+                        </ul>
+                        <p><strong>Refresh the page to see the imported data.</strong></p>
+                    </div>
+                `;
+
+                // Reload data
+                setTimeout(() => {
+                    this.loadInitialData();
+                    this.showView('dispatchers');
+                }, 2000);
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Import failed: ${result.error}</div>`;
+                importBtn.disabled = false;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            importBtn.disabled = false;
         }
     }
 };
