@@ -266,6 +266,30 @@ try {
             $response['success'] = true;
             break;
 
+        case 'desk_get_assignments':
+            $deskId = $input['desk_id'];
+            $sql = "SELECT
+                        ja.id as assignment_id,
+                        ja.shift,
+                        ja.start_date,
+                        d.id as dispatcher_id,
+                        d.employee_number,
+                        d.first_name,
+                        d.last_name,
+                        d.classification,
+                        GROUP_CONCAT(jrd.day_of_week ORDER BY jrd.day_of_week) as rest_days
+                    FROM job_assignments ja
+                    JOIN dispatchers d ON ja.dispatcher_id = d.id
+                    LEFT JOIN job_rest_days jrd ON jrd.job_assignment_id = ja.id
+                    WHERE ja.desk_id = ?
+                        AND ja.end_date IS NULL
+                        AND ja.assignment_type = 'regular'
+                    GROUP BY ja.id, ja.shift, ja.start_date, d.id, d.employee_number, d.first_name, d.last_name, d.classification
+                    ORDER BY FIELD(ja.shift, 'first', 'second', 'third')";
+            $response['data'] = dbQueryAll($sql, [$deskId]);
+            $response['success'] = true;
+            break;
+
         // ============================================================
         // VACANCIES
         // ============================================================

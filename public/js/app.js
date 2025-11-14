@@ -239,7 +239,7 @@ const App = {
         const daySchedule = this.data.schedule[date] || [];
         const assignment = daySchedule.find(a => a.desk_id == deskId && a.shift === shift);
 
-        if (!assignment) {
+        if (!assignment || assignment.assignment_type === 'vacancy' || !assignment.dispatcher_name) {
             return '<span class="badge badge-danger">VACANT</span>';
         }
 
@@ -250,7 +250,7 @@ const App = {
             className += ' atw';
         }
 
-        return `<div class="${className}">${assignment.dispatcher_name || 'Unassigned'}</div>`;
+        return `<div class="${className}">${assignment.dispatcher_name}</div>`;
     },
 
     /**
@@ -1065,20 +1065,70 @@ const App = {
     /**
      * Manage desk assignments
      */
-    manageDeskAssignments: function(deskId) {
+    manageDeskAssignments: async function(deskId) {
         const desk = this.data.desks.find(d => d.id == deskId);
         if (!desk) return;
+
+        // Load current assignments
+        let currentAssignments = [];
+        try {
+            currentAssignments = await this.api('desk_get_assignments', { desk_id: deskId });
+        } catch (error) {
+            console.error('Failed to load current assignments:', error);
+        }
 
         const dispatcherOptions = this.data.dispatchers.map(d =>
             `<option value="${d.id}">${d.employee_number} - ${d.first_name} ${d.last_name} (${this.formatClassification(d.classification)})</option>`
         ).join('');
 
+        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        let currentAssignmentsHtml = '';
+        if (currentAssignments.length > 0) {
+            currentAssignmentsHtml = `
+                <div class="alert alert-success" style="margin-bottom: 20px;">
+                    <strong>Current Assignments:</strong>
+                    <table style="width: 100%; margin-top: 10px; font-size: 0.9em;">
+                        <thead>
+                            <tr>
+                                <th style="text-align: left;">Shift</th>
+                                <th style="text-align: left;">Dispatcher</th>
+                                <th style="text-align: left;">Rest Days</th>
+                                <th style="text-align: left;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${currentAssignments.map(a => {
+                                const restDaysDisplay = a.rest_days
+                                    ? a.rest_days.split(',').map(d => daysOfWeek[parseInt(d)]).join(', ')
+                                    : 'Standard weekend pattern';
+                                return `
+                                    <tr>
+                                        <td>${a.shift.charAt(0).toUpperCase() + a.shift.slice(1)}</td>
+                                        <td>${a.employee_number} - ${a.first_name} ${a.last_name}</td>
+                                        <td>${restDaysDisplay}</td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-secondary" onclick="App.editRestDays(${a.assignment_id}, ${deskId}, '${a.shift}', ${a.dispatcher_id})">
+                                                Edit Rest Days
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
         const html = `
+            ${currentAssignmentsHtml}
             <form id="assignment-form" onsubmit="App.submitAssignmentForm(event, ${deskId}); return false;">
                 <div class="alert alert-info">
                     <strong>Desk:</strong> ${desk.name} (${desk.code})<br>
                     <strong>Division:</strong> ${desk.division_name}
                 </div>
+                <h3 style="margin-top: 20px;">Add New Assignment</h3>
                 <div class="form-group">
                     <label>Assignment Type *</label>
                     <select name="assignment_type" required onchange="App.updateAssignmentForm(this)">
@@ -1119,10 +1169,14 @@ const App = {
 
     updateAssignmentForm: function(select) {
         const reliefInfo = document.getElementById('relief-info');
+        const restDaysOption = document.getElementById('rest-days-option');
+
         if (select.value === 'relief') {
             reliefInfo.style.display = 'block';
+            if (restDaysOption) restDaysOption.style.display = 'none';
         } else {
             reliefInfo.style.display = 'none';
+            if (restDaysOption) restDaysOption.style.display = 'block';
         }
     },
 
@@ -1535,6 +1589,84 @@ const App = {
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to assign: ' + error.message);
+        }
+    },
+
+    /**
+     * Edit rest days for an existing assignment
+     */
+    editRestDays: async function(assignmentId, deskId, shift, dispatcherId) {
+        const desk = this.data.desks.find(d => d.id == deskId);
+        const dispatcher = this.data.dispatchers.find(d => d.id == dispatcherId);
+
+        // Load current rest days
+        let currentRestDays = [];
+        try {
+            const result = await this.api('job_get_rest_days', { job_assignment_id: assignmentId });
+            currentRestDays = result.map(r => parseInt(r.day_of_week));
+        } catch (error) {
+            console.error('Failed to load rest days:', error);
+        }
+
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        const html = `
+            <form id="edit-rest-days-form" onsubmit="App.submitEditRestDaysForm(event, ${assignmentId}); return false;">
+                <div class="alert alert-info">
+                    <strong>Dispatcher:</strong> ${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}<br>
+                    <strong>Desk:</strong> ${desk.name} (${desk.code})<br>
+                    <strong>Shift:</strong> ${shift.charAt(0).toUpperCase() + shift.slice(1)}
+                </div>
+                <p><strong>Select rest days (days OFF) for this assignment:</strong></p>
+                <p><small>Leave all unchecked to use standard weekend relief pattern.</small></p>
+                <div style="margin: 20px 0;">
+                    ${daysOfWeek.map((day, index) => `
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="rest_day_${index}" value="1"
+                                    ${currentRestDays.includes(index) ? 'checked' : ''}
+                                    style="margin-right: 10px; width: 18px; height: 18px;">
+                                <span style="font-size: 1.1em;">${day}</span>
+                            </label>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="alert alert-warning">
+                    <strong>Note:</strong> Relief dispatcher coverage (if assigned) takes precedence over these custom rest days.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Rest Days</button>
+                </div>
+            </form>
+        `;
+
+        this.showModal('Edit Rest Days', html);
+    },
+
+    submitEditRestDaysForm: async function(event, assignmentId) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+
+        const restDays = [];
+        for (let i = 0; i < 7; i++) {
+            if (formData.get(`rest_day_${i}`) === '1') {
+                restDays.push(i);
+            }
+        }
+
+        try {
+            await this.api('job_set_rest_days', {
+                job_assignment_id: assignmentId,
+                rest_days: restDays
+            });
+
+            this.showSuccess('Rest days updated successfully');
+            this.closeModal();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to update rest days: ' + error.message);
         }
     }
 };
