@@ -106,7 +106,11 @@ Once the import is complete:
    - Assign relief dispatchers manually
    - Set up ATW rotation
 
-3. **Configure rotating schedules**: Any "4 Days Rotating" schedules need manual configuration
+3. **Configure ACD rotating schedules**: The 78 Assistant Chief Dispatchers (ACDs) with "4 Days Rotating" schedules need manual configuration
+   - ACDs work 12-hour shifts (not the standard 8-hour)
+   - They work 4 consecutive days then have time off
+   - See `/docs/acd_rotating_schedules.md` for detailed information
+   - Assignment codes include "ACD" (e.g., "PB ACD-1-GOLD", "LK ACD-1-BLUE")
 
 4. **Update qualifications**: The import qualifies each dispatcher for their assigned desk only. Add additional qualifications as needed.
 
