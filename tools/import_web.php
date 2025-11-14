@@ -89,6 +89,41 @@ $action = $input['action'] ?? '';
 
 try {
     switch ($action) {
+        case 'clear_data':
+            // Clear all dispatcher-related data
+            dbBeginTransaction();
+
+            try {
+                // Delete in correct order to respect foreign keys
+                dbExecute("DELETE FROM vacancy_fills");
+                dbExecute("DELETE FROM vacancies");
+                dbExecute("DELETE FROM holddown_bids");
+                dbExecute("DELETE FROM holddowns");
+                dbExecute("DELETE FROM assignment_log");
+                dbExecute("DELETE FROM fra_hours_tracking");
+                dbExecute("DELETE FROM job_rest_days");
+                dbExecute("DELETE FROM job_assignments");
+                dbExecute("DELETE FROM dispatcher_qualifications");
+                dbExecute("DELETE FROM relief_schedules");
+                dbExecute("DELETE FROM atw_rotation");
+                dbExecute("DELETE FROM dispatchers");
+                dbExecute("DELETE FROM desks");
+                dbExecute("DELETE FROM divisions");
+
+                // Reset auto-increment
+                dbExecute("ALTER TABLE divisions AUTO_INCREMENT = 1");
+                dbExecute("ALTER TABLE desks AUTO_INCREMENT = 1");
+                dbExecute("ALTER TABLE dispatchers AUTO_INCREMENT = 1");
+
+                dbCommit();
+
+                echo json_encode(['success' => true, 'message' => 'All data cleared successfully']);
+            } catch (Exception $e) {
+                dbRollback();
+                echo json_encode(['success' => false, 'error' => 'Failed to clear data: ' . $e->getMessage()]);
+            }
+            break;
+
         case 'validate':
             // Validate CSV and return statistics
             $csvFile = __DIR__ . '/../data.csv';

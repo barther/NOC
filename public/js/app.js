@@ -589,7 +589,11 @@ const App = {
                 <div class="card-body">
                     <p>Import dispatcher data from <strong>data.csv</strong> file (must be in the NOC root directory).</p>
                     <p><small>This will import dispatchers, divisions, desks, and assignments from the CSV file.</small></p>
+                    <div class="alert alert-warning" style="margin-bottom: 15px;">
+                        <strong>Warning:</strong> If you get duplicate errors, click "Clear All Data" first to remove existing dispatchers.
+                    </div>
                     <div id="import-status" style="margin: 15px 0;"></div>
+                    <button class="btn btn-danger" onclick="App.clearAllData()" style="margin-right: 10px;">Clear All Data</button>
                     <button class="btn btn-secondary" onclick="App.validateCSV()">Validate CSV</button>
                     <button class="btn btn-primary" onclick="App.importCSV()" id="import-btn" disabled>Import Data</button>
                 </div>
@@ -1790,6 +1794,52 @@ const App = {
         } catch (error) {
             statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
             importBtn.disabled = false;
+        }
+    },
+
+    /**
+     * Clear all dispatcher data
+     */
+    clearAllData: async function() {
+        if (!confirm('⚠️ WARNING: This will DELETE ALL DATA including:\n\n- All dispatchers\n- All divisions and desks\n- All assignments\n- All vacancies and hold-downs\n- All scheduling data\n\nThis CANNOT be undone!\n\nAre you absolutely sure?')) {
+            return;
+        }
+
+        if (!confirm('Final confirmation: Delete ALL data?\n\nType your answer mentally: YES to proceed')) {
+            return;
+        }
+
+        const statusDiv = document.getElementById('import-status');
+
+        statusDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Clearing all data...</p></div>';
+
+        try {
+            const response = await fetch('tools/import_web.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'clear_data' })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>All data cleared successfully!</strong><br>
+                        <p>You can now import fresh data from the CSV file.</p>
+                    </div>
+                `;
+
+                // Reload data
+                setTimeout(() => {
+                    this.loadInitialData();
+                    this.showView('dispatchers');
+                }, 1000);
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Failed to clear data: ${result.error}</div>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
         }
     }
 };
