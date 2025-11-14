@@ -27,7 +27,19 @@
         </main>
     </div>
 
-    <!-- Views (loaded dynamically) -->
+    <!-- Modals -->
+    <div id="modal-container" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Modal Title</h2>
+                <button class="modal-close" onclick="App.closeModal()">&times;</button>
+            </div>
+            <div id="modal-body">
+                <!-- Modal content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
     <script src="public/js/app.js"></script>
     <script>
         // Initialize the app
