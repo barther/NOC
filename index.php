@@ -1,16 +1,20 @@
+<?php
+require_once __DIR__ . '/config/version.php';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOC Scheduler - Network Operations Center Scheduling System</title>
-    <link rel="stylesheet" href="public/css/style.css">
+    <link rel="stylesheet" href="public/css/style.css?v=<?php echo CACHE_VERSION; ?>">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>NOC Scheduler</h1>
             <p class="subtitle">Network Operations Center - 24/7 Coverage Management</p>
+            <div class="version-stamp">v<?php echo APP_VERSION; ?></div>
         </header>
 
         <nav class="main-nav">
@@ -40,7 +44,7 @@
         </div>
     </div>
 
-    <script src="public/js/app.js"></script>
+    <script src="public/js/app.js?v=<?php echo CACHE_VERSION; ?>"></script>
     <script>
         // Initialize the app
         document.addEventListener('DOMContentLoaded', function() {
