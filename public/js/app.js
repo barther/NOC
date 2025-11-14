@@ -917,19 +917,39 @@ const App = {
     /**
      * Edit dispatcher
      */
-    editDispatcher: async function(id) {
+    editDispatcher: function(id) {
         const dispatcher = this.data.dispatchers.find(d => d.id == id);
         if (!dispatcher) return;
 
-        alert(`Editing: ${dispatcher.first_name} ${dispatcher.last_name}\n\nCurrent Classification: ${this.formatClassification(dispatcher.classification)}`);
+        const html = `
+            <form id="edit-dispatcher-form" onsubmit="App.submitEditDispatcherForm(event, ${id}); return false;">
+                <div class="alert alert-info">
+                    <strong>Dispatcher:</strong> ${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}<br>
+                    <strong>Seniority Date:</strong> ${dispatcher.seniority_date}<br>
+                    <strong>Seniority Rank:</strong> ${dispatcher.seniority_rank}
+                </div>
+                <div class="form-group">
+                    <label>Classification *</label>
+                    <select name="classification" required>
+                        <option value="extra_board" ${dispatcher.classification === 'extra_board' ? 'selected' : ''}>Extra Board</option>
+                        <option value="job_holder" ${dispatcher.classification === 'job_holder' ? 'selected' : ''}>Job Holder</option>
+                        <option value="qualifying" ${dispatcher.classification === 'qualifying' ? 'selected' : ''}>Qualifying</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.manageQualifications(${id})">Manage Qualifications</button>
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Edit Dispatcher', html);
+    },
 
-        const classification = prompt('Change Classification:\n1 - Extra Board\n2 - Job Holder\n3 - Qualifying\n\nEnter 1, 2, or 3 (or Cancel to skip):');
-        if (!classification) return;
-
-        const classMap = { '1': 'extra_board', '2': 'job_holder', '3': 'qualifying' };
-        const classValue = classMap[classification];
-
-        if (!classValue) return;
+    submitEditDispatcherForm: async function(event, id) {
+        event.preventDefault();
+        const dispatcher = this.data.dispatchers.find(d => d.id == id);
+        const form = event.target;
 
         try {
             await this.api('dispatcher_update', {
@@ -938,14 +958,105 @@ const App = {
                 first_name: dispatcher.first_name,
                 last_name: dispatcher.last_name,
                 seniority_date: dispatcher.seniority_date,
-                classification: classValue,
+                classification: form.classification.value,
                 active: true
             });
             this.showSuccess('Dispatcher updated successfully');
             await this.loadDispatchers();
+            this.closeModal();
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to update dispatcher: ' + error.message);
+        }
+    },
+
+    /**
+     * Manage dispatcher qualifications
+     */
+    manageQualifications: function(dispatcherId) {
+        const dispatcher = this.data.dispatchers.find(d => d.id == dispatcherId);
+        if (!dispatcher) return;
+
+        // Group desks by division for better organization
+        const desksByDivision = {};
+        this.data.desks.forEach(desk => {
+            if (!desksByDivision[desk.division_name]) {
+                desksByDivision[desk.division_name] = [];
+            }
+            desksByDivision[desk.division_name].push(desk);
+        });
+
+        let html = `
+            <form id="qualifications-form" onsubmit="App.submitQualificationsForm(event, ${dispatcherId}); return false;">
+                <div class="alert alert-info">
+                    <strong>Dispatcher:</strong> ${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}
+                </div>
+                <p><strong>Select all desks this dispatcher is qualified for:</strong></p>
+                <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); padding: 15px; border-radius: 5px;">
+        `;
+
+        // Load current qualifications via API
+        this.api('dispatcher_qualifications', { dispatcher_id: dispatcherId }).then(qualifications => {
+            const qualifiedDeskIds = qualifications.filter(q => q.qualified).map(q => q.desk_id);
+
+            Object.keys(desksByDivision).sort().forEach(divisionName => {
+                html += `<div style="margin-bottom: 20px;">
+                            <h4 style="color: var(--primary-color); margin-bottom: 10px;">${divisionName}</h4>`;
+
+                desksByDivision[divisionName].forEach(desk => {
+                    const isQualified = qualifiedDeskIds.includes(desk.id);
+                    html += `
+                        <div style="margin-left: 20px; margin-bottom: 5px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="desk_${desk.id}" value="1" ${isQualified ? 'checked' : ''}
+                                       style="margin-right: 10px; width: 18px; height: 18px;">
+                                <span>${desk.name} (${desk.code})</span>
+                            </label>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+            });
+
+            html += `
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.editDispatcher(${dispatcherId})">Back</button>
+                    <button type="submit" class="btn btn-primary">Save Qualifications</button>
+                </div>
+            </form>
+            `;
+
+            this.showModal('Manage Qualifications', html);
+        });
+    },
+
+    submitQualificationsForm: async function(event, dispatcherId) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+
+        try {
+            // Get all desks and update qualifications
+            const updates = [];
+            for (const desk of this.data.desks) {
+                const isQualified = formData.get(`desk_${desk.id}`) === '1';
+                updates.push(
+                    this.api('dispatcher_set_qualification', {
+                        dispatcher_id: dispatcherId,
+                        desk_id: desk.id,
+                        qualified: isQualified,
+                        qualified_date: isQualified ? new Date().toISOString().split('T')[0] : null
+                    })
+                );
+            }
+
+            await Promise.all(updates);
+            this.showSuccess('Qualifications updated successfully');
+            this.closeModal();
+        } catch (error) {
+            this.showError('Failed to update qualifications: ' + error.message);
         }
     },
 
