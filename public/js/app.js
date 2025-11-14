@@ -179,10 +179,19 @@ const App = {
     loadSchedule: async function() {
         const startDateInput = document.getElementById('schedule-start-date');
         const startDate = startDateInput ? startDateInput.value : this.formatDate(this.getMonday(new Date()));
-        const endDate = this.formatDate(new Date(new Date(startDate).getTime() + 6 * 24 * 60 * 60 * 1000));
+
+        // Calculate end date (6 days after start = full week Mon-Sun)
+        // Force local timezone to avoid date shifting issues
+        const startDateObj = new Date(startDate + 'T00:00:00');
+        const endDateObj = new Date(startDateObj);
+        endDateObj.setDate(endDateObj.getDate() + 6);
+        const endDate = this.formatDate(endDateObj);
+
+        console.log('Loading schedule:', { startDate, endDate });
 
         try {
             this.data.schedule = await this.api('schedule_get_range', { start_date: startDate, end_date: endDate });
+            console.log('Schedule data received:', Object.keys(this.data.schedule).length, 'days');
             this.renderScheduleGrid(startDate);
         } catch (error) {
             this.showError('Failed to load schedule: ' + error.message);
@@ -194,12 +203,15 @@ const App = {
      */
     renderScheduleGrid: function(startDate) {
         const days = [];
-        const current = new Date(startDate);
+        // Force local timezone to avoid date shifting
+        const current = new Date(startDate + 'T00:00:00');
 
         for (let i = 0; i < 7; i++) {
             days.push(new Date(current));
             current.setDate(current.getDate() + 1);
         }
+
+        console.log('Rendering schedule grid for 7 days:', days.map(d => this.formatDate(d)));
 
         let html = '<div class="schedule-grid">';
 
