@@ -1,0 +1,46 @@
+# NOC Scheduler - Git Ignore
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# Backup files
+*.bak
+backups/
+*_backup.sql
+*_dump.sql
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Temporary files
+tmp/
+temp/
+cache/
+
+# PHP
+vendor/
+composer.lock
+
+# Node (if used for future frontend build)
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Environment files
+.env
+.env.local
+.env.production
