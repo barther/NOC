@@ -7,13 +7,13 @@ class Desk {
      * Get all desks
      */
     public static function getAll($activeOnly = true) {
-        $sql = "SELECT d.*, div.name as division_name
+        $sql = "SELECT d.*, division.name as division_name
                 FROM desks d
-                JOIN divisions div ON d.division_id = div.id";
+                JOIN divisions division ON d.division_id = division.id";
         if ($activeOnly) {
             $sql .= " WHERE d.active = 1";
         }
-        $sql .= " ORDER BY div.name, d.name";
+        $sql .= " ORDER BY division.name, d.name";
         return dbQueryAll($sql);
     }
 
@@ -21,9 +21,9 @@ class Desk {
      * Get desk by ID
      */
     public static function getById($id) {
-        $sql = "SELECT d.*, div.name as division_name
+        $sql = "SELECT d.*, division.name as division_name
                 FROM desks d
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 WHERE d.id = ?";
         return dbQueryOne($sql, [$id]);
     }

@@ -297,14 +297,14 @@ class Schedule {
                     al.work_date,
                     al.shift,
                     d.name as desk_name,
-                    div.name as division_name,
+                    division.name as division_name,
                     al.assignment_source,
                     al.pay_type,
                     al.actual_start_time,
                     al.actual_end_time
                 FROM assignment_log al
                 JOIN desks d ON al.desk_id = d.id
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 WHERE al.dispatcher_id = ?
                     AND al.work_date BETWEEN ? AND ?
                 ORDER BY al.work_date, al.actual_start_time";
