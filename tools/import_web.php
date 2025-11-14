@@ -286,14 +286,12 @@ try {
                     // Generate employee number
                     $empNumber = date('y', strtotime($seniorityDate)) . sprintf('%03d', $importedCount + 1);
 
-                    // Create dispatcher
-                    $dispatcherId = Dispatcher::create(
-                        $empNumber,
-                        $firstName,
-                        $lastName,
-                        $seniorityDate,
-                        'job_holder'
-                    );
+                    // Create dispatcher with temporary seniority rank (will recalculate at end)
+                    // Use high temporary ranks to avoid conflicts during bulk import
+                    $tempRank = 999999 - $importedCount;
+                    $sql = "INSERT INTO dispatchers (employee_number, first_name, last_name, seniority_date, seniority_rank, classification)
+                            VALUES (?, ?, ?, ?, ?, ?)";
+                    $dispatcherId = dbInsert($sql, [$empNumber, $firstName, $lastName, $seniorityDate, $tempRank, 'job_holder']);
 
                     // Qualify for desk
                     Dispatcher::setQualification($dispatcherId, $deskId, true, null, date('Y-m-d'));
