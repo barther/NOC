@@ -736,61 +736,114 @@ const App = {
     },
 
     /**
+     * Show/hide modal
+     */
+    showModal: function(title, bodyHtml) {
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-body').innerHTML = bodyHtml;
+        document.getElementById('modal-container').classList.add('active');
+    },
+
+    closeModal: function() {
+        document.getElementById('modal-container').classList.remove('active');
+    },
+
+    /**
      * Show division management modal
      */
-    showDivisionModal: async function() {
-        const action = prompt('Division Manager\n\n1 - Add Division\n2 - List Divisions\n\nEnter option:');
+    showDivisionModal: function() {
+        const html = `
+            <form id="division-form" onsubmit="App.submitDivisionForm(event); return false;">
+                <div class="form-group">
+                    <label>Division Name *</label>
+                    <input type="text" name="name" required placeholder="e.g., Northern Division">
+                </div>
+                <div class="form-group">
+                    <label>Division Code *</label>
+                    <input type="text" name="code" required placeholder="e.g., NORTH" style="text-transform: uppercase;">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Division</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Create Division', html);
+    },
 
-        if (action === '1') {
-            const name = prompt('Enter Division Name:');
-            if (!name) return;
+    submitDivisionForm: async function(event) {
+        event.preventDefault();
+        const form = event.target;
+        const data = {
+            name: form.name.value,
+            code: form.code.value.toUpperCase()
+        };
 
-            const code = prompt('Enter Division Code:');
-            if (!code) return;
-
-            try {
-                await this.api('division_create', { name: name, code: code });
-                this.showSuccess('Division created successfully');
-                await this.loadDivisions();
-                await this.loadDesks();
-                this.showView(this.currentView);
-            } catch (error) {
-                this.showError('Failed to create division: ' + error.message);
-            }
-        } else if (action === '2') {
+        try {
+            await this.api('division_create', data);
+            this.showSuccess('Division created successfully');
             await this.loadDivisions();
-            let list = 'Current Divisions:\n\n';
-            this.data.divisions.forEach(d => {
-                list += `${d.code}: ${d.name}\n`;
-            });
-            alert(list);
+            await this.loadDesks();
+            this.closeModal();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to create division: ' + error.message);
         }
     },
 
     /**
      * Show desk modal
      */
-    showDeskModal: async function() {
-        const divisionId = prompt('Enter Division ID (check Divisions list first):');
-        if (!divisionId) return;
+    showDeskModal: function() {
+        const divisionOptions = this.data.divisions.map(d =>
+            `<option value="${d.id}">${d.name} (${d.code})</option>`
+        ).join('');
 
-        const name = prompt('Enter Desk Name:');
-        if (!name) return;
+        const html = `
+            <form id="desk-form" onsubmit="App.submitDeskForm(event); return false;">
+                <div class="form-group">
+                    <label>Division *</label>
+                    <select name="division_id" required>
+                        <option value="">Select a division...</option>
+                        ${divisionOptions}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Desk Name *</label>
+                    <input type="text" name="name" required placeholder="e.g., Northern Main">
+                </div>
+                <div class="form-group">
+                    <label>Desk Code *</label>
+                    <input type="text" name="code" required placeholder="e.g., N-MAIN" style="text-transform: uppercase;">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" rows="3" placeholder="Optional description"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Desk</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Create Desk', html);
+    },
 
-        const code = prompt('Enter Desk Code:');
-        if (!code) return;
-
-        const description = prompt('Enter Description (optional):') || '';
+    submitDeskForm: async function(event) {
+        event.preventDefault();
+        const form = event.target;
+        const data = {
+            division_id: form.division_id.value,
+            name: form.name.value,
+            code: form.code.value.toUpperCase(),
+            description: form.description.value
+        };
 
         try {
-            await this.api('desk_create', {
-                division_id: divisionId,
-                name: name,
-                code: code,
-                description: description
-            });
+            await this.api('desk_create', data);
             this.showSuccess('Desk created successfully');
             await this.loadDesks();
+            this.closeModal();
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to create desk: ' + error.message);
@@ -800,33 +853,61 @@ const App = {
     /**
      * Show dispatcher modal
      */
-    showDispatcherModal: async function() {
-        const employeeNumber = prompt('Enter Employee Number:');
-        if (!employeeNumber) return;
+    showDispatcherModal: function() {
+        const html = `
+            <form id="dispatcher-form" onsubmit="App.submitDispatcherForm(event); return false;">
+                <div class="form-group">
+                    <label>Employee Number *</label>
+                    <input type="text" name="employee_number" required placeholder="e.g., 1001">
+                </div>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label>First Name *</label>
+                        <input type="text" name="first_name" required placeholder="John">
+                    </div>
+                    <div class="form-group">
+                        <label>Last Name *</label>
+                        <input type="text" name="last_name" required placeholder="Smith">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Seniority Date *</label>
+                    <input type="date" name="seniority_date" required>
+                    <small>Seniority rank will be calculated automatically based on this date</small>
+                </div>
+                <div class="form-group">
+                    <label>Classification *</label>
+                    <select name="classification" required>
+                        <option value="extra_board">Extra Board</option>
+                        <option value="job_holder">Job Holder</option>
+                        <option value="qualifying">Qualifying</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Dispatcher</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Create Dispatcher', html);
+    },
 
-        const firstName = prompt('Enter First Name:');
-        if (!firstName) return;
-
-        const lastName = prompt('Enter Last Name:');
-        if (!lastName) return;
-
-        const seniorityDate = prompt('Enter Seniority Date (YYYY-MM-DD):');
-        if (!seniorityDate) return;
-
-        const classification = prompt('Enter Classification:\n1 - Extra Board\n2 - Job Holder\n3 - Qualifying\n\nEnter 1, 2, or 3:');
-        const classMap = { '1': 'extra_board', '2': 'job_holder', '3': 'qualifying' };
-        const classValue = classMap[classification] || 'extra_board';
+    submitDispatcherForm: async function(event) {
+        event.preventDefault();
+        const form = event.target;
+        const data = {
+            employee_number: form.employee_number.value,
+            first_name: form.first_name.value,
+            last_name: form.last_name.value,
+            seniority_date: form.seniority_date.value,
+            classification: form.classification.value
+        };
 
         try {
-            const result = await this.api('dispatcher_create', {
-                employee_number: employeeNumber,
-                first_name: firstName,
-                last_name: lastName,
-                seniority_date: seniorityDate,
-                classification: classValue
-            });
+            await this.api('dispatcher_create', data);
             this.showSuccess('Dispatcher created successfully');
             await this.loadDispatchers();
+            this.closeModal();
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to create dispatcher: ' + error.message);
@@ -871,38 +952,84 @@ const App = {
     /**
      * Manage desk assignments
      */
-    manageDeskAssignments: async function(deskId) {
+    manageDeskAssignments: function(deskId) {
         const desk = this.data.desks.find(d => d.id == deskId);
         if (!desk) return;
 
-        const action = prompt(`Manage Assignments: ${desk.name}\n\n1 - Assign First Shift\n2 - Assign Second Shift\n3 - Assign Third Shift\n4 - Assign Relief Dispatcher\n\nEnter option:`);
+        const dispatcherOptions = this.data.dispatchers.map(d =>
+            `<option value="${d.id}">${d.employee_number} - ${d.first_name} ${d.last_name} (${this.formatClassification(d.classification)})</option>`
+        ).join('');
 
-        if (!action || action < '1' || action > '4') return;
+        const html = `
+            <form id="assignment-form" onsubmit="App.submitAssignmentForm(event, ${deskId}); return false;">
+                <div class="alert alert-info">
+                    <strong>Desk:</strong> ${desk.name} (${desk.code})<br>
+                    <strong>Division:</strong> ${desk.division_name}
+                </div>
+                <div class="form-group">
+                    <label>Assignment Type *</label>
+                    <select name="assignment_type" required onchange="App.updateAssignmentForm(this)">
+                        <option value="">Select type...</option>
+                        <option value="first">First Shift (0600-1400)</option>
+                        <option value="second">Second Shift (1400-2200)</option>
+                        <option value="third">Third Shift (2200-0600)</option>
+                        <option value="relief">Relief Dispatcher (Weekend Coverage)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Dispatcher *</label>
+                    <select name="dispatcher_id" required>
+                        <option value="">Select dispatcher...</option>
+                        ${dispatcherOptions}
+                    </select>
+                </div>
+                <div id="relief-info" class="alert alert-warning" style="display: none;">
+                    Relief dispatcher will automatically cover:<br>
+                    • Saturday & Sunday First Shift<br>
+                    • Saturday & Sunday Second Shift<br>
+                    • Saturday Third Shift
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-success">Assign</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Assign Dispatcher', html);
+    },
 
-        const dispatcherId = prompt('Enter Dispatcher ID (check Dispatchers list first):');
-        if (!dispatcherId) return;
+    updateAssignmentForm: function(select) {
+        const reliefInfo = document.getElementById('relief-info');
+        if (select.value === 'relief') {
+            reliefInfo.style.display = 'block';
+        } else {
+            reliefInfo.style.display = 'none';
+        }
+    },
 
-        const shiftMap = { '1': 'first', '2': 'second', '3': 'third', '4': 'relief' };
-        const shift = shiftMap[action];
+    submitAssignmentForm: async function(event, deskId) {
+        event.preventDefault();
+        const form = event.target;
+        const assignmentType = form.assignment_type.value;
+        const dispatcherId = form.dispatcher_id.value;
 
         try {
-            if (action === '4') {
-                // Relief dispatcher - generate standard schedule
+            if (assignmentType === 'relief') {
                 await this.api('schedule_generate_standard_relief', {
                     desk_id: deskId,
                     relief_dispatcher_id: dispatcherId
                 });
                 this.showSuccess('Relief dispatcher assigned with standard schedule');
             } else {
-                // Regular shift assignment
                 await this.api('schedule_assign_job', {
                     dispatcher_id: dispatcherId,
                     desk_id: deskId,
-                    shift: shift,
+                    shift: assignmentType,
                     assignment_type: 'regular'
                 });
-                this.showSuccess(`${shift.charAt(0).toUpperCase() + shift.slice(1)} shift assigned successfully`);
+                this.showSuccess(`${assignmentType.charAt(0).toUpperCase() + assignmentType.slice(1)} shift assigned successfully`);
             }
+            this.closeModal();
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to assign: ' + error.message);
@@ -919,29 +1046,68 @@ const App = {
     /**
      * Show vacancy modal
      */
-    showVacancyModal: async function() {
-        const deskId = prompt('Enter Desk ID:');
-        if (!deskId) return;
+    showVacancyModal: function() {
+        const deskOptions = this.data.desks.map(d =>
+            `<option value="${d.id}">${d.division_name} - ${d.name}</option>`
+        ).join('');
 
-        const shift = prompt('Enter Shift (first/second/third):');
-        if (!shift) return;
+        const html = `
+            <form id="vacancy-form" onsubmit="App.submitVacancyForm(event); return false;">
+                <div class="form-group">
+                    <label>Desk *</label>
+                    <select name="desk_id" required>
+                        <option value="">Select desk...</option>
+                        ${deskOptions}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Shift *</label>
+                    <select name="shift" required>
+                        <option value="">Select shift...</option>
+                        <option value="first">First Shift (0600-1400)</option>
+                        <option value="second">Second Shift (1400-2200)</option>
+                        <option value="third">Third Shift (2200-0600)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Date *</label>
+                    <input type="date" name="vacancy_date" required>
+                </div>
+                <div class="form-group">
+                    <label>Vacancy Type *</label>
+                    <select name="vacancy_type" required>
+                        <option value="sick">Sick</option>
+                        <option value="vacation">Vacation</option>
+                        <option value="training">Training</option>
+                        <option value="loa">Leave of Absence</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Vacancy</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Create Vacancy', html);
+    },
 
-        const vacancyDate = prompt('Enter Date (YYYY-MM-DD):');
-        if (!vacancyDate) return;
-
-        const typeNum = prompt('Vacancy Type:\n1 - Sick\n2 - Vacation\n3 - Training\n4 - LOA\n5 - Other\n\nEnter 1-5:');
-        const typeMap = { '1': 'sick', '2': 'vacation', '3': 'training', '4': 'loa', '5': 'other' };
-        const vacancyType = typeMap[typeNum] || 'other';
+    submitVacancyForm: async function(event) {
+        event.preventDefault();
+        const form = event.target;
+        const vacancyType = form.vacancy_type.value;
+        const data = {
+            desk_id: form.desk_id.value,
+            shift: form.shift.value,
+            vacancy_date: form.vacancy_date.value,
+            vacancy_type: vacancyType,
+            is_planned: vacancyType !== 'sick' && vacancyType !== 'other'
+        };
 
         try {
-            await this.api('vacancy_create', {
-                desk_id: deskId,
-                shift: shift,
-                vacancy_date: vacancyDate,
-                vacancy_type: vacancyType,
-                is_planned: vacancyType !== 'sick' && vacancyType !== 'other'
-            });
+            await this.api('vacancy_create', data);
             this.showSuccess('Vacancy created successfully');
+            this.closeModal();
             this.loadVacancies();
         } catch (error) {
             this.showError('Failed to create vacancy: ' + error.message);
@@ -951,31 +1117,78 @@ const App = {
     /**
      * Show holddown modal
      */
-    showHolddownModal: async function() {
-        const deskId = prompt('Enter Desk ID:');
-        if (!deskId) return;
+    showHolddownModal: function() {
+        const deskOptions = this.data.desks.map(d =>
+            `<option value="${d.id}">${d.division_name} - ${d.name}</option>`
+        ).join('');
 
-        const shift = prompt('Enter Shift (first/second/third):');
-        if (!shift) return;
+        const dispatcherOptions = this.data.dispatchers.map(d =>
+            `<option value="${d.id}">${d.employee_number} - ${d.first_name} ${d.last_name}</option>`
+        ).join('');
 
-        const startDate = prompt('Enter Start Date (YYYY-MM-DD):');
-        if (!startDate) return;
+        const html = `
+            <form id="holddown-form" onsubmit="App.submitHolddownForm(event); return false;">
+                <div class="form-group">
+                    <label>Desk *</label>
+                    <select name="desk_id" required>
+                        <option value="">Select desk...</option>
+                        ${deskOptions}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Shift *</label>
+                    <select name="shift" required>
+                        <option value="">Select shift...</option>
+                        <option value="first">First Shift (0600-1400)</option>
+                        <option value="second">Second Shift (1400-2200)</option>
+                        <option value="third">Third Shift (2200-0600)</option>
+                    </select>
+                </div>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label>Start Date *</label>
+                        <input type="date" name="start_date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>End Date *</label>
+                        <input type="date" name="end_date" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Incumbent Dispatcher *</label>
+                    <select name="incumbent_dispatcher_id" required>
+                        <option value="">Select incumbent...</option>
+                        ${dispatcherOptions}
+                    </select>
+                    <small>The dispatcher going on vacation/training/leave</small>
+                </div>
+                <div class="alert alert-info">
+                    This hold-down will be posted for bidding. Qualified dispatchers can submit bids, and it will be awarded to the most senior bidder.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Post Hold-Down</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Post Hold-Down', html);
+    },
 
-        const endDate = prompt('Enter End Date (YYYY-MM-DD):');
-        if (!endDate) return;
-
-        const incumbentId = prompt('Enter Incumbent Dispatcher ID:');
-        if (!incumbentId) return;
+    submitHolddownForm: async function(event) {
+        event.preventDefault();
+        const form = event.target;
+        const data = {
+            desk_id: form.desk_id.value,
+            shift: form.shift.value,
+            start_date: form.start_date.value,
+            end_date: form.end_date.value,
+            incumbent_dispatcher_id: form.incumbent_dispatcher_id.value
+        };
 
         try {
-            await this.api('holddown_post', {
-                desk_id: deskId,
-                shift: shift,
-                start_date: startDate,
-                end_date: endDate,
-                incumbent_dispatcher_id: incumbentId
-            });
+            await this.api('holddown_post', data);
             this.showSuccess('Hold-down posted for bidding');
+            this.closeModal();
             this.loadHolddowns();
         } catch (error) {
             this.showError('Failed to post hold-down: ' + error.message);
