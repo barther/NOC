@@ -1,539 +1,681 @@
 <?php
+/**
+ * Vacancy Engine - Contract-Compliant Order-of-Call
+ *
+ * Implements Article 3(g) - Order of Call for Filling Vacancies
+ *
+ * CORRECT ORDER-OF-CALL:
+ * 1. GAD (Guaranteed Assigned Dispatcher) - if available
+ * 2. If no GAD available, then:
+ *    a. Incumbent overtime (same desk, regular holder accepts OT)
+ *    b. Senior rest day overtime (senior dispatcher on rest day accepts OT)
+ *    c. Junior same-shift diversion requiring GAD backfill
+ *    d. Junior same-shift diversion (no backfill)
+ *    e. Senior off-shift diversion requiring GAD backfill
+ *    f. Least overtime cost fallback (actual cost calculation)
+ *
+ * Also handles:
+ * - GAD baseline rules (Appendix 9)
+ * - Training protection
+ * - FRA hours of service
+ * - Cost tracking
+ * - Improper diversion penalties
+ */
+
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/GAD.php';
+require_once __DIR__ . '/FRAHours.php';
 require_once __DIR__ . '/Dispatcher.php';
+require_once __DIR__ . '/Desk.php';
 
 class VacancyEngine {
 
     private $decisionLog = [];
-    private $ebBaseline = 0;
-
-    public function __construct() {
-        // Load EB baseline from config
-        $sql = "SELECT config_value FROM system_config WHERE config_key = 'eb_baseline_count'";
-        $result = dbQueryOne($sql);
-        $this->ebBaseline = (int)$result['config_value'];
-    }
 
     /**
-     * Fill a vacancy using the order of call procedure
-     * Returns: array with fill details or null if cannot fill
+     * Fill a vacancy using contract-compliant order-of-call
      */
     public function fillVacancy($vacancyId) {
-        $vacancy = $this->getVacancy($vacancyId);
+        $vacancy = self::getVacancy($vacancyId);
         if (!$vacancy) {
             throw new Exception("Vacancy not found");
         }
 
+        if ($vacancy['status'] !== 'open') {
+            throw new Exception("Vacancy is not open");
+        }
+
         $this->decisionLog = [];
-        $this->log("Starting order of call for Vacancy #{$vacancyId}");
+        $this->log("Starting order-of-call for Vacancy #{$vacancyId}");
         $this->log("Desk: {$vacancy['desk_name']}, Shift: {$vacancy['shift']}, Date: {$vacancy['vacancy_date']}");
 
-        $shiftStartTime = $this->getShiftStartTime($vacancy['vacancy_date'], $vacancy['shift']);
+        dbBeginTransaction();
+        try {
+            // Step 1: Try GAD first
+            $gadOption = $this->tryGAD($vacancy);
+            if ($gadOption['available']) {
+                $fill = $this->executeFill($vacancy, $gadOption, 1, 'gad');
+                dbCommit();
+                return $fill;
+            }
 
-        // 4.1 - Check GAD/Extra Board
-        $result = $this->checkExtraBoard($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
+            // No GAD available, proceed with order-of-call steps 2-6
+            // Step 2: Incumbent overtime
+            $incumbentOption = $this->tryIncumbentOT($vacancy);
+            if ($incumbentOption['available']) {
+                $fill = $this->executeFill($vacancy, $incumbentOption, 2, 'incumbent_ot');
+                dbCommit();
+                return $fill;
+            }
+
+            // Step 3: Senior rest day overtime
+            $seniorRestOption = $this->trySeniorRestOT($vacancy);
+            if ($seniorRestOption['available']) {
+                $fill = $this->executeFill($vacancy, $seniorRestOption, 3, 'senior_rest_ot');
+                dbCommit();
+                return $fill;
+            }
+
+            // Step 4: Junior same-shift diversion requiring GAD backfill
+            $juniorDiversionGAD = $this->tryJuniorDiversionWithGAD($vacancy);
+            if ($juniorDiversionGAD['available']) {
+                $fill = $this->executeFill($vacancy, $juniorDiversionGAD, 4, 'junior_diversion_gad');
+                dbCommit();
+                return $fill;
+            }
+
+            // Step 5: Junior same-shift diversion (no GAD backfill)
+            $juniorDiversion = $this->tryJuniorDiversion($vacancy);
+            if ($juniorDiversion['available']) {
+                $fill = $this->executeFill($vacancy, $juniorDiversion, 5, 'junior_diversion');
+                dbCommit();
+                return $fill;
+            }
+
+            // Step 6: Senior off-shift diversion requiring GAD backfill
+            $seniorOffShiftGAD = $this->trySeniorOffShiftWithGAD($vacancy);
+            if ($seniorOffShiftGAD['available']) {
+                $fill = $this->executeFill($vacancy, $seniorOffShiftGAD, 6, 'senior_offshift_gad');
+                dbCommit();
+                return $fill;
+            }
+
+            // Step 7: Least cost fallback (calculate actual costs)
+            $leastCostOption = $this->findLeastCostOption($vacancy);
+            if ($leastCostOption['available']) {
+                $fill = $this->executeFill($vacancy, $leastCostOption, 7, 'least_cost');
+                dbCommit();
+                return $fill;
+            }
+
+            dbRollback();
+            $this->log("CRITICAL: Unable to fill vacancy - no options available");
+            throw new Exception("No available dispatchers to fill vacancy");
+
+        } catch (Exception $e) {
+            dbRollback();
+            throw $e;
         }
-
-        // 4.2 - Regular incumbent on rest day (overtime)
-        $result = $this->checkIncumbentRestDay($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
-        }
-
-        // 4.3 - Senior available dispatcher on rest day (overtime)
-        $result = $this->checkSeniorRestDay($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
-        }
-
-        // 4.4 - Junior diversion (same shift, with EB backfill)
-        $result = $this->checkJuniorDiversionWithEB($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
-        }
-
-        // 4.5 - Junior diversion (same shift, no EB backfill - cascading)
-        $result = $this->checkJuniorDiversionNoEB($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
-        }
-
-        // 4.6 - Senior diversion (off shift, with EB backfill, overtime)
-        $result = $this->checkSeniorDiversionOffShift($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
-        }
-
-        // 4.7 - Fallback: least overtime cost
-        $result = $this->fallbackLeastCost($vacancy, $shiftStartTime);
-        if ($result) {
-            return $this->recordFill($vacancyId, $result);
-        }
-
-        $this->log("CRITICAL: Unable to fill vacancy - no options available");
-        return null;
     }
 
     /**
-     * 4.1 - Check GAD/Extra Board
+     * Step 1: Try to fill with GAD
      */
-    private function checkExtraBoard($vacancy, $shiftStartTime) {
-        $this->log("4.1 - Checking Extra Board...");
+    private function tryGAD($vacancy) {
+        $this->log("Step 1: Checking GAD (Guaranteed Assigned Dispatchers)...");
 
-        // Get all EB dispatchers qualified for this desk
-        $sql = "SELECT d.*
-                FROM dispatchers d
-                JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
-                WHERE d.classification = 'extra_board'
-                    AND d.active = 1
-                    AND dq.desk_id = ?
-                    AND dq.qualified = 1
-                ORDER BY d.seniority_rank";
-        $ebList = dbQueryAll($sql, [$vacancy['desk_id']]);
+        // Get available GADs for this desk/date/shift
+        $availableGADs = GAD::getAvailableGAD(
+            $vacancy['vacancy_date'],
+            $vacancy['shift'],
+            $vacancy['desk_id']
+        );
 
-        foreach ($ebList as $eb) {
-            // Check FRA availability
-            if (!Dispatcher::canWorkShift($eb['id'], $shiftStartTime)) {
-                $this->log("  - EB {$eb['first_name']} {$eb['last_name']} not available (FRA rest)");
-                continue;
-            }
-
-            // Check if they're already scheduled
-            if ($this->isDispatcherScheduled($eb['id'], $vacancy['vacancy_date'])) {
-                $this->log("  - EB {$eb['first_name']} {$eb['last_name']} already scheduled");
-                continue;
-            }
-
-            $this->log("  ✓ Found qualified EB: {$eb['first_name']} {$eb['last_name']}");
-            return [
-                'dispatcher_id' => $eb['id'],
-                'fill_method' => 'eb_qualified',
-                'pay_type' => 'straight',
-                'created_cascade_vacancy' => false
-            ];
+        if (empty($availableGADs)) {
+            $this->log("  ✗ No GAD available");
+            return ['available' => false, 'reason' => 'No GAD available'];
         }
 
-        // Check if we can use a qualifying EB (carrier's option)
-        $sql = "SELECT d.*
-                FROM dispatchers d
-                JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
-                WHERE d.classification = 'qualifying'
-                    AND d.active = 1
-                    AND dq.desk_id = ?
-                ORDER BY d.seniority_rank";
-        $qualifyingList = dbQueryAll($sql, [$vacancy['desk_id']]);
+        // Use most senior available GAD
+        $gad = $availableGADs[0];
 
-        foreach ($qualifyingList as $qualifier) {
-            if (!Dispatcher::canWorkShift($qualifier['id'], $shiftStartTime)) {
-                continue;
-            }
-            if ($this->isDispatcherScheduled($qualifier['id'], $vacancy['vacancy_date'])) {
-                continue;
-            }
+        $this->log("  ✓ Found available GAD: {$gad['first_name']} {$gad['last_name']} (Seniority #{$gad['seniority_rank']})");
 
-            $this->log("  ⚠ Option: Use qualifying dispatcher {$qualifier['first_name']} {$qualifier['last_name']} (carrier discretion)");
-            // Note: This requires manual approval - return as option but don't auto-fill
-            // For now, we'll skip and continue to next step
-        }
-
-        $this->log("  ✗ No qualified EB available");
-        return null;
+        return [
+            'available' => true,
+            'dispatcher_id' => $gad['id'],
+            'dispatcher_name' => $gad['first_name'] . ' ' . $gad['last_name'],
+            'pay_type' => 'straight',
+            'hours' => 8,
+            'cost' => $this->calculateCost($gad, 'straight', 8),
+            'requires_backfill' => false
+        ];
     }
 
     /**
-     * 4.2 - Regular incumbent on rest day (overtime)
+     * Step 2: Incumbent overtime
+     * Offer OT to the regular job holder for this desk/shift
      */
-    private function checkIncumbentRestDay($vacancy, $shiftStartTime) {
-        $this->log("4.2 - Checking incumbent on rest day...");
+    private function tryIncumbentOT($vacancy) {
+        $this->log("Step 2: Checking incumbent overtime...");
 
-        // Get the regular incumbent for this desk+shift
-        $sql = "SELECT d.*
-                FROM dispatchers d
-                JOIN job_assignments ja ON d.id = ja.dispatcher_id
+        // Get regular assignment for this desk/shift
+        $sql = "SELECT d.*, ja.id as assignment_id,
+                       dpr.hourly_rate, dpr.overtime_rate
+                FROM job_assignments ja
+                INNER JOIN dispatchers d ON ja.dispatcher_id = d.id
+                LEFT JOIN dispatcher_pay_rates dpr ON d.id = dpr.dispatcher_id
+                    AND dpr.effective_date <= ?
+                    AND (dpr.end_date IS NULL OR dpr.end_date >= ?)
                 WHERE ja.desk_id = ?
-                    AND ja.shift = ?
-                    AND ja.assignment_type = 'regular'
-                    AND ja.end_date IS NULL
-                LIMIT 1";
-        $incumbent = dbQueryOne($sql, [$vacancy['desk_id'], $vacancy['shift']]);
+                  AND ja.shift = ?
+                  AND ja.assignment_type = 'regular'
+                  AND ja.end_date IS NULL
+                  AND d.active = 1";
+
+        $incumbent = dbQueryOne($sql, [
+            $vacancy['vacancy_date'],
+            $vacancy['vacancy_date'],
+            $vacancy['desk_id'],
+            $vacancy['shift']
+        ]);
 
         if (!$incumbent) {
-            $this->log("  ✗ No incumbent assigned to this position");
-            return null;
+            $this->log("  ✗ No incumbent for this job");
+            return ['available' => false, 'reason' => 'No incumbent for this job'];
         }
 
-        // Check if this is their rest day
-        if ($this->isDispatcherScheduled($incumbent['id'], $vacancy['vacancy_date'])) {
-            $this->log("  ✗ Incumbent {$incumbent['first_name']} {$incumbent['last_name']} is working this day");
-            return null;
+        // Check if incumbent is available (FRA HOS)
+        if (!FRAHours::isAvailableForShift($incumbent['id'], $vacancy['vacancy_date'], $vacancy['shift'])) {
+            $this->log("  ✗ Incumbent {$incumbent['first_name']} {$incumbent['last_name']} not available (HOS violation)");
+            return ['available' => false, 'reason' => 'Incumbent HOS violation'];
         }
 
-        // Check FRA availability
-        if (!Dispatcher::canWorkShift($incumbent['id'], $shiftStartTime)) {
-            $this->log("  ✗ Incumbent not available (FRA rest)");
-            return null;
-        }
+        $this->log("  ✓ Incumbent {$incumbent['first_name']} {$incumbent['last_name']} available for OT");
 
-        $this->log("  ✓ Incumbent {$incumbent['first_name']} {$incumbent['last_name']} available on rest day (OT)");
         return [
+            'available' => true,
             'dispatcher_id' => $incumbent['id'],
-            'fill_method' => 'incumbent_overtime',
+            'dispatcher_name' => $incumbent['first_name'] . ' ' . $incumbent['last_name'],
             'pay_type' => 'overtime',
-            'created_cascade_vacancy' => false
+            'hours' => 8,
+            'cost' => $this->calculateCost($incumbent, 'overtime', 8),
+            'requires_backfill' => false
         ];
     }
 
     /**
-     * 4.3 - Senior available dispatcher on rest day (overtime)
+     * Step 3: Senior rest day overtime
+     * Offer OT to most senior dispatcher who's on rest day
      */
-    private function checkSeniorRestDay($vacancy, $shiftStartTime) {
-        $this->log("4.3 - Checking senior dispatchers on rest day...");
+    private function trySeniorRestOT($vacancy) {
+        $this->log("Step 3: Checking senior rest day overtime...");
 
-        // Get all qualified dispatchers, ordered by seniority (most senior first)
-        $sql = "SELECT d.*
+        // Get dispatchers on rest day, qualified for this desk, ordered by seniority
+        $sql = "SELECT DISTINCT d.*,
+                       dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
-                JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
-                WHERE d.active = 1
-                    AND d.classification != 'qualifying'
-                    AND dq.desk_id = ?
-                    AND dq.qualified = 1
-                ORDER BY d.seniority_rank ASC";
-        $qualified = dbQueryAll($sql, [$vacancy['desk_id']]);
+                INNER JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
+                INNER JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN job_rest_days jrd ON ja.id = jrd.job_assignment_id
+                LEFT JOIN dispatcher_pay_rates dpr ON d.id = dpr.dispatcher_id
+                    AND dpr.effective_date <= ?
+                    AND (dpr.end_date IS NULL OR dpr.end_date >= ?)
+                WHERE dq.desk_id = ?
+                  AND jrd.day_of_week = ?
+                  AND ja.end_date IS NULL
+                  AND d.active = 1
+                  AND d.training_protected = 0
+                ORDER BY d.seniority_rank ASC
+                LIMIT 1";
 
-        foreach ($qualified as $dispatcher) {
-            // Skip if they're scheduled to work this day
-            if ($this->isDispatcherScheduled($dispatcher['id'], $vacancy['vacancy_date'])) {
-                continue;
-            }
+        $dayOfWeek = date('w', strtotime($vacancy['vacancy_date']));
 
-            // Check FRA availability
-            if (!Dispatcher::canWorkShift($dispatcher['id'], $shiftStartTime)) {
-                continue;
-            }
+        $senior = dbQueryOne($sql, [
+            $vacancy['vacancy_date'],
+            $vacancy['vacancy_date'],
+            $vacancy['desk_id'],
+            $dayOfWeek
+        ]);
 
-            $this->log("  ✓ Senior dispatcher {$dispatcher['first_name']} {$dispatcher['last_name']} available on rest day (OT)");
-            return [
-                'dispatcher_id' => $dispatcher['id'],
-                'fill_method' => 'senior_restday_overtime',
-                'pay_type' => 'overtime',
-                'created_cascade_vacancy' => false
-            ];
+        if (!$senior) {
+            $this->log("  ✗ No senior dispatcher on rest day");
+            return ['available' => false, 'reason' => 'No senior dispatcher on rest day'];
         }
 
-        $this->log("  ✗ No senior dispatchers available on rest day");
-        return null;
+        // Check FRA HOS
+        if (!FRAHours::isAvailableForShift($senior['id'], $vacancy['vacancy_date'], $vacancy['shift'])) {
+            $this->log("  ✗ Senior {$senior['first_name']} {$senior['last_name']} not available (HOS violation)");
+            return ['available' => false, 'reason' => 'Senior HOS violation'];
+        }
+
+        $this->log("  ✓ Senior {$senior['first_name']} {$senior['last_name']} available for rest day OT");
+
+        return [
+            'available' => true,
+            'dispatcher_id' => $senior['id'],
+            'dispatcher_name' => $senior['first_name'] . ' ' . $senior['last_name'],
+            'pay_type' => 'overtime',
+            'hours' => 8,
+            'cost' => $this->calculateCost($senior, 'overtime', 8),
+            'requires_backfill' => false
+        ];
     }
 
     /**
-     * 4.4 - Junior diversion (same shift, with EB backfill)
+     * Step 4: Junior same-shift diversion requiring GAD backfill
+     * Move junior dispatcher from another desk on SAME shift, GAD fills their spot
      */
-    private function checkJuniorDiversionWithEB($vacancy, $shiftStartTime) {
-        $this->log("4.4 - Checking junior diversion (same shift, with EB backfill)...");
+    private function tryJuniorDiversionWithGAD($vacancy) {
+        $this->log("Step 4: Checking junior same-shift diversion (with GAD backfill)...");
 
-        // Get dispatchers working the same shift on this date, ordered by seniority (junior first)
-        $sql = "SELECT d.*, ja.desk_id as working_desk_id
+        // Get most junior dispatcher on same shift at different desk
+        $sql = "SELECT DISTINCT d.*, ja.desk_id as current_desk_id, ja.shift as current_shift,
+                       dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
-                JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
+                LEFT JOIN dispatcher_pay_rates dpr ON d.id = dpr.dispatcher_id
+                    AND dpr.effective_date <= ?
+                    AND (dpr.end_date IS NULL OR dpr.end_date >= ?)
                 WHERE ja.shift = ?
-                    AND ja.end_date IS NULL
-                    AND d.active = 1
-                    AND d.classification != 'qualifying'
-                ORDER BY d.seniority_rank DESC";
-        $workingDispatchers = dbQueryAll($sql, [$vacancy['shift']]);
+                  AND ja.desk_id != ?
+                  AND ja.end_date IS NULL
+                  AND ja.assignment_type = 'regular'
+                  AND dq.desk_id = ?
+                  AND d.active = 1
+                  AND d.training_protected = 0
+                ORDER BY d.seniority_rank DESC
+                LIMIT 1";
 
-        foreach ($workingDispatchers as $dispatcher) {
-            // Check if qualified for the vacancy desk
-            if (!Dispatcher::isQualified($dispatcher['id'], $vacancy['desk_id'])) {
-                continue;
-            }
+        $junior = dbQueryOne($sql, [
+            $vacancy['vacancy_date'],
+            $vacancy['vacancy_date'],
+            $vacancy['shift'],
+            $vacancy['desk_id'],
+            $vacancy['desk_id']
+        ]);
 
-            // Check if they're scheduled to work (not on rest day)
-            if (!$this->isDispatcherScheduled($dispatcher['id'], $vacancy['vacancy_date'])) {
-                continue;
-            }
-
-            // Check if an EB can backfill their position
-            $canBackfill = $this->canEBBackfill($dispatcher['working_desk_id'], $vacancy['shift'], $vacancy['vacancy_date'], $shiftStartTime);
-
-            if ($canBackfill) {
-                $ebCount = $this->getCurrentEBCount();
-                $payType = ($ebCount < $this->ebBaseline) ? 'overtime' : 'straight';
-
-                $this->log("  ✓ Junior dispatcher {$dispatcher['first_name']} {$dispatcher['last_name']} can be diverted, EB can backfill ({$payType})");
-                return [
-                    'dispatcher_id' => $dispatcher['id'],
-                    'fill_method' => 'junior_diversion_same_shift_with_eb',
-                    'pay_type' => $payType,
-                    'created_cascade_vacancy' => true,
-                    'cascade_desk_id' => $dispatcher['working_desk_id'],
-                    'cascade_shift' => $vacancy['shift']
-                ];
-            }
+        if (!$junior) {
+            $this->log("  ✗ No junior dispatcher on same shift");
+            return ['available' => false, 'reason' => 'No junior dispatcher on same shift'];
         }
 
-        $this->log("  ✗ No junior diversions possible with EB backfill");
-        return null;
+        // Check if GAD is available to backfill their spot
+        $backfillGADs = GAD::getAvailableGAD(
+            $vacancy['vacancy_date'],
+            $junior['current_shift'],
+            $junior['current_desk_id']
+        );
+
+        if (empty($backfillGADs)) {
+            $this->log("  ✗ No GAD available for backfill");
+            return ['available' => false, 'reason' => 'No GAD available for backfill'];
+        }
+
+        // Determine pay type based on GAD baseline
+        $desk = Desk::getById($vacancy['desk_id']);
+        $payType = GAD::getDiversionPayType($desk['division_id'], $vacancy['vacancy_date']);
+
+        $this->log("  ✓ Junior {$junior['first_name']} {$junior['last_name']} can be diverted, GAD backfills ({$payType})");
+
+        return [
+            'available' => true,
+            'dispatcher_id' => $junior['id'],
+            'dispatcher_name' => $junior['first_name'] . ' ' . $junior['last_name'],
+            'pay_type' => $payType,
+            'hours' => 8,
+            'cost' => $this->calculateCost($junior, $payType, 8),
+            'requires_backfill' => true,
+            'backfill_dispatcher_id' => $backfillGADs[0]['id'],
+            'backfill_desk_id' => $junior['current_desk_id'],
+            'backfill_shift' => $junior['current_shift']
+        ];
     }
 
     /**
-     * 4.5 - Junior diversion (same shift, no EB backfill - cascading)
+     * Step 5: Junior same-shift diversion (no GAD backfill available)
      */
-    private function checkJuniorDiversionNoEB($vacancy, $shiftStartTime) {
-        $this->log("4.5 - Checking junior diversion (same shift, cascading)...");
+    private function tryJuniorDiversion($vacancy) {
+        $this->log("Step 5: Checking junior same-shift diversion (no GAD backfill)...");
 
-        // Get dispatchers working the same shift on this date, ordered by seniority (junior first)
-        $sql = "SELECT d.*, ja.desk_id as working_desk_id
+        // Same as step 4 but without GAD backfill requirement
+        $sql = "SELECT DISTINCT d.*, ja.desk_id as current_desk_id, ja.shift as current_shift,
+                       dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
-                JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
+                LEFT JOIN dispatcher_pay_rates dpr ON d.id = dpr.dispatcher_id
+                    AND dpr.effective_date <= ?
+                    AND (dpr.end_date IS NULL OR dpr.end_date >= ?)
                 WHERE ja.shift = ?
-                    AND ja.end_date IS NULL
-                    AND d.active = 1
-                    AND d.classification != 'qualifying'
-                ORDER BY d.seniority_rank DESC";
-        $workingDispatchers = dbQueryAll($sql, [$vacancy['shift']]);
+                  AND ja.desk_id != ?
+                  AND ja.end_date IS NULL
+                  AND ja.assignment_type = 'regular'
+                  AND dq.desk_id = ?
+                  AND d.active = 1
+                  AND d.training_protected = 0
+                ORDER BY d.seniority_rank DESC
+                LIMIT 1";
 
-        foreach ($workingDispatchers as $dispatcher) {
-            // Check if qualified for the vacancy desk
-            if (!Dispatcher::isQualified($dispatcher['id'], $vacancy['desk_id'])) {
-                continue;
-            }
+        $junior = dbQueryOne($sql, [
+            $vacancy['vacancy_date'],
+            $vacancy['vacancy_date'],
+            $vacancy['shift'],
+            $vacancy['desk_id'],
+            $vacancy['desk_id']
+        ]);
 
-            // Check if they're scheduled to work (not on rest day)
-            if (!$this->isDispatcherScheduled($dispatcher['id'], $vacancy['vacancy_date'])) {
-                continue;
-            }
-
-            $this->log("  ✓ Junior dispatcher {$dispatcher['first_name']} {$dispatcher['last_name']} can be diverted (creates cascading vacancy)");
-            return [
-                'dispatcher_id' => $dispatcher['id'],
-                'fill_method' => 'junior_diversion_same_shift_no_eb',
-                'pay_type' => 'straight',
-                'created_cascade_vacancy' => true,
-                'cascade_desk_id' => $dispatcher['working_desk_id'],
-                'cascade_shift' => $vacancy['shift']
-            ];
+        if (!$junior) {
+            $this->log("  ✗ No junior dispatcher available");
+            return ['available' => false, 'reason' => 'No junior dispatcher available'];
         }
 
-        $this->log("  ✗ No junior diversions possible");
-        return null;
+        // Diversion creates a new vacancy at their current desk
+        $desk = Desk::getById($vacancy['desk_id']);
+        $payType = GAD::getDiversionPayType($desk['division_id'], $vacancy['vacancy_date']);
+
+        $this->log("  ✓ Junior {$junior['first_name']} {$junior['last_name']} can be diverted (creates cascade vacancy)");
+
+        return [
+            'available' => true,
+            'dispatcher_id' => $junior['id'],
+            'dispatcher_name' => $junior['first_name'] . ' ' . $junior['last_name'],
+            'pay_type' => $payType,
+            'hours' => 8,
+            'cost' => $this->calculateCost($junior, $payType, 8),
+            'requires_backfill' => false,
+            'creates_vacancy' => true,
+            'new_vacancy_desk_id' => $junior['current_desk_id'],
+            'new_vacancy_shift' => $junior['current_shift']
+        ];
     }
 
     /**
-     * 4.6 - Senior diversion (off shift, with EB backfill, overtime)
+     * Step 6: Senior off-shift diversion with GAD backfill
      */
-    private function checkSeniorDiversionOffShift($vacancy, $shiftStartTime) {
-        $this->log("4.6 - Checking senior diversion (off shift, with EB backfill, OT)...");
+    private function trySeniorOffShiftWithGAD($vacancy) {
+        $this->log("Step 6: Checking senior off-shift diversion (with GAD backfill)...");
 
-        // Get dispatchers working OTHER shifts on this date, ordered by seniority (senior first)
-        $sql = "SELECT d.*, ja.desk_id as working_desk_id, ja.shift as working_shift
+        // Get most senior dispatcher on DIFFERENT shift
+        $sql = "SELECT DISTINCT d.*, ja.desk_id as current_desk_id, ja.shift as current_shift,
+                       dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
-                JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN job_assignments ja ON d.id = ja.dispatcher_id
+                INNER JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
+                LEFT JOIN dispatcher_pay_rates dpr ON d.id = dpr.dispatcher_id
+                    AND dpr.effective_date <= ?
+                    AND (dpr.end_date IS NULL OR dpr.end_date >= ?)
                 WHERE ja.shift != ?
-                    AND ja.end_date IS NULL
-                    AND d.active = 1
-                    AND d.classification != 'qualifying'
-                ORDER BY d.seniority_rank ASC";
-        $workingDispatchers = dbQueryAll($sql, [$vacancy['shift']]);
+                  AND ja.end_date IS NULL
+                  AND ja.assignment_type = 'regular'
+                  AND dq.desk_id = ?
+                  AND d.active = 1
+                  AND d.training_protected = 0
+                ORDER BY d.seniority_rank ASC
+                LIMIT 1";
 
-        foreach ($workingDispatchers as $dispatcher) {
-            // Check if qualified for the vacancy desk
-            if (!Dispatcher::isQualified($dispatcher['id'], $vacancy['desk_id'])) {
-                continue;
-            }
+        $senior = dbQueryOne($sql, [
+            $vacancy['vacancy_date'],
+            $vacancy['vacancy_date'],
+            $vacancy['shift'],
+            $vacancy['desk_id']
+        ]);
 
-            // Check if they're scheduled to work (not on rest day)
-            if (!$this->isDispatcherScheduled($dispatcher['id'], $vacancy['vacancy_date'])) {
-                continue;
-            }
-
-            // Check FRA - can they work both shifts in same day? (No - 9hr max)
-            // Off-shift diversion means they work their regular + the vacancy = not possible same day
-            // So this would need to be their only shift that day
-            $this->log("  ⚠ Off-shift diversion logic: Would need dispatcher to work different shift than assigned");
-            // For now, skip this - it's complex and may violate FRA
-            continue;
-
-            // Check if an EB can backfill their position
-            $workingShiftStart = $this->getShiftStartTime($vacancy['vacancy_date'], $dispatcher['working_shift']);
-            $canBackfill = $this->canEBBackfill($dispatcher['working_desk_id'], $dispatcher['working_shift'], $vacancy['vacancy_date'], $workingShiftStart);
-
-            if ($canBackfill) {
-                $this->log("  ✓ Senior dispatcher {$dispatcher['first_name']} {$dispatcher['last_name']} can be diverted off-shift (OT)");
-                return [
-                    'dispatcher_id' => $dispatcher['id'],
-                    'fill_method' => 'senior_diversion_off_shift_overtime',
-                    'pay_type' => 'overtime',
-                    'created_cascade_vacancy' => true,
-                    'cascade_desk_id' => $dispatcher['working_desk_id'],
-                    'cascade_shift' => $dispatcher['working_shift']
-                ];
-            }
+        if (!$senior) {
+            $this->log("  ✗ No senior off-shift dispatcher");
+            return ['available' => false, 'reason' => 'No senior off-shift dispatcher'];
         }
 
-        $this->log("  ✗ No senior off-shift diversions possible");
-        return null;
+        // Check FRA HOS (different shift may violate rest)
+        if (!FRAHours::isAvailableForShift($senior['id'], $vacancy['vacancy_date'], $vacancy['shift'])) {
+            $this->log("  ✗ Senior {$senior['first_name']} {$senior['last_name']} not available (HOS violation)");
+            return ['available' => false, 'reason' => 'Senior HOS violation'];
+        }
+
+        // Check if GAD available to backfill
+        $backfillGADs = GAD::getAvailableGAD(
+            $vacancy['vacancy_date'],
+            $senior['current_shift'],
+            $senior['current_desk_id']
+        );
+
+        if (empty($backfillGADs)) {
+            $this->log("  ✗ No GAD available for backfill");
+            return ['available' => false, 'reason' => 'No GAD available for backfill'];
+        }
+
+        $desk = Desk::getById($vacancy['desk_id']);
+        $payType = GAD::getDiversionPayType($desk['division_id'], $vacancy['vacancy_date']);
+
+        $this->log("  ✓ Senior {$senior['first_name']} {$senior['last_name']} can be diverted off-shift, GAD backfills");
+
+        return [
+            'available' => true,
+            'dispatcher_id' => $senior['id'],
+            'dispatcher_name' => $senior['first_name'] . ' ' . $senior['last_name'],
+            'pay_type' => $payType,
+            'hours' => 8,
+            'cost' => $this->calculateCost($senior, $payType, 8),
+            'requires_backfill' => true,
+            'backfill_dispatcher_id' => $backfillGADs[0]['id'],
+            'backfill_desk_id' => $senior['current_desk_id'],
+            'backfill_shift' => $senior['current_shift']
+        ];
     }
 
     /**
-     * 4.7 - Fallback: least overtime cost
+     * Step 7: Least cost option - Actually calculate costs and pick cheapest
      */
-    private function fallbackLeastCost($vacancy, $shiftStartTime) {
-        $this->log("4.7 - Fallback: Finding least overtime cost...");
+    private function findLeastCostOption($vacancy) {
+        $this->log("Step 7: Least cost fallback - calculating actual costs...");
 
-        // Get all qualified dispatchers not scheduled this day
-        $sql = "SELECT d.*
+        $options = [];
+
+        // Try all available dispatchers and calculate actual costs
+        $sql = "SELECT DISTINCT d.*,
+                       dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
-                JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
-                WHERE d.active = 1
-                    AND dq.desk_id = ?
-                    AND dq.qualified = 1
-                ORDER BY d.seniority_rank ASC";
-        $qualified = dbQueryAll($sql, [$vacancy['desk_id']]);
+                INNER JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
+                LEFT JOIN dispatcher_pay_rates dpr ON d.id = dpr.dispatcher_id
+                    AND dpr.effective_date <= ?
+                    AND (dpr.end_date IS NULL OR dpr.end_date >= ?)
+                WHERE dq.desk_id = ?
+                  AND d.active = 1
+                  AND d.training_protected = 0
+                ORDER BY d.seniority_rank";
 
-        foreach ($qualified as $dispatcher) {
-            if ($this->isDispatcherScheduled($dispatcher['id'], $vacancy['vacancy_date'])) {
+        $dispatchers = dbQueryAll($sql, [
+            $vacancy['vacancy_date'],
+            $vacancy['vacancy_date'],
+            $vacancy['desk_id']
+        ]);
+
+        foreach ($dispatchers as $dispatcher) {
+            if (!FRAHours::isAvailableForShift($dispatcher['id'], $vacancy['vacancy_date'], $vacancy['shift'])) {
                 continue;
             }
 
-            if (!Dispatcher::canWorkShift($dispatcher['id'], $shiftStartTime)) {
-                continue;
-            }
-
-            $this->log("  ✓ Fallback: {$dispatcher['first_name']} {$dispatcher['last_name']} (OT)");
-            return [
+            // Calculate cost for straight time
+            $straightCost = $this->calculateCost($dispatcher, 'straight', 8);
+            $options[] = [
                 'dispatcher_id' => $dispatcher['id'],
-                'fill_method' => 'fallback_least_cost',
+                'dispatcher_name' => $dispatcher['first_name'] . ' ' . $dispatcher['last_name'],
+                'pay_type' => 'straight',
+                'hours' => 8,
+                'cost' => $straightCost
+            ];
+
+            // Calculate cost for overtime
+            $otCost = $this->calculateCost($dispatcher, 'overtime', 8);
+            $options[] = [
+                'dispatcher_id' => $dispatcher['id'],
+                'dispatcher_name' => $dispatcher['first_name'] . ' ' . $dispatcher['last_name'],
                 'pay_type' => 'overtime',
-                'created_cascade_vacancy' => false
+                'hours' => 8,
+                'cost' => $otCost
             ];
         }
 
-        return null;
-    }
-
-    /**
-     * Check if EB can backfill a position
-     */
-    private function canEBBackfill($deskId, $shift, $date, $shiftStartTime) {
-        $sql = "SELECT d.*
-                FROM dispatchers d
-                JOIN dispatcher_qualifications dq ON d.id = dq.dispatcher_id
-                WHERE d.classification = 'extra_board'
-                    AND d.active = 1
-                    AND dq.desk_id = ?
-                    AND dq.qualified = 1
-                ORDER BY d.seniority_rank";
-        $ebList = dbQueryAll($sql, [$deskId]);
-
-        foreach ($ebList as $eb) {
-            if (!Dispatcher::canWorkShift($eb['id'], $shiftStartTime)) {
-                continue;
-            }
-            if ($this->isDispatcherScheduled($eb['id'], $date)) {
-                continue;
-            }
-            return true;
+        if (empty($options)) {
+            $this->log("  ✗ No dispatchers available");
+            return ['available' => false, 'reason' => 'No dispatchers available'];
         }
 
-        return false;
+        // Sort by cost, pick cheapest
+        usort($options, function($a, $b) {
+            return $a['cost'] <=> $b['cost'];
+        });
+
+        $cheapest = $options[0];
+        $this->log("  ✓ Least cost option: {$cheapest['dispatcher_name']} (\${$cheapest['cost']} {$cheapest['pay_type']})");
+
+        $cheapest['available'] = true;
+        $cheapest['requires_backfill'] = false;
+
+        return $cheapest;
     }
 
     /**
-     * Check if dispatcher is scheduled to work on a given date
+     * Calculate cost for a dispatcher/shift
      */
-    private function isDispatcherScheduled($dispatcherId, $date) {
-        $sql = "SELECT COUNT(*) as count
-                FROM assignment_log
-                WHERE dispatcher_id = ? AND work_date = ?";
-        $result = dbQueryOne($sql, [$dispatcherId, $date]);
-        return $result['count'] > 0;
+    private function calculateCost($dispatcher, $payType, $hours) {
+        $rate = $payType === 'overtime' ? $dispatcher['overtime_rate'] : $dispatcher['hourly_rate'];
+
+        // If no rate on record, use default
+        if (!$rate) {
+            $rate = $payType === 'overtime' ? 45.00 : 30.00; // Default rates
+        }
+
+        return round($rate * $hours, 2);
     }
 
     /**
-     * Get current Extra Board count
+     * Execute the fill
      */
-    private function getCurrentEBCount() {
-        $sql = "SELECT COUNT(*) as count
-                FROM dispatchers
-                WHERE classification = 'extra_board' AND active = 1";
-        $result = dbQueryOne($sql);
-        return $result['count'];
+    private function executeFill($vacancy, $option, $rank, $type) {
+        // Record the fill
+        $sql = "INSERT INTO vacancy_fills
+                (vacancy_id, dispatcher_id, filled_date, pay_type, hours_worked, calculated_cost)
+                VALUES (?, ?, NOW(), ?, ?, ?)";
+
+        $fillId = dbInsert($sql, [
+            $vacancy['id'],
+            $option['dispatcher_id'],
+            $option['pay_type'],
+            $option['hours'],
+            $option['cost']
+        ]);
+
+        // Update vacancy status
+        $sql = "UPDATE vacancies
+                SET status = 'filled',
+                    filled_by = ?,
+                    filled_at = NOW(),
+                    filled_by_option_rank = ?,
+                    filled_by_option_type = ?,
+                    total_cost = ?
+                WHERE id = ?";
+
+        dbExecute($sql, [
+            $option['dispatcher_id'],
+            $rank,
+            $type,
+            $option['cost'],
+            $vacancy['id']
+        ]);
+
+        // If requires backfill, create assignment for backfill GAD
+        if (!empty($option['requires_backfill'])) {
+            $this->createBackfill(
+                $option['backfill_dispatcher_id'],
+                $option['backfill_desk_id'],
+                $option['backfill_shift'],
+                $vacancy['vacancy_date']
+            );
+        }
+
+        // If creates new vacancy, record it
+        if (!empty($option['creates_vacancy'])) {
+            $this->createVacancy(
+                $option['new_vacancy_desk_id'],
+                $option['new_vacancy_shift'],
+                $vacancy['vacancy_date'],
+                'Created by diversion'
+            );
+        }
+
+        // Record in assignment log
+        $this->logAssignment($vacancy, $option, $rank, $type);
+
+        $this->log("✓ Vacancy filled successfully using {$type}");
+
+        $option['fill_id'] = $fillId;
+        $option['option_rank'] = $rank;
+        $option['option_type'] = $type;
+        $option['decision_log'] = $this->decisionLog;
+
+        return $option;
     }
 
     /**
-     * Get shift start time for a given date and shift
+     * Create backfill assignment
      */
-    private function getShiftStartTime($date, $shift) {
-        $times = [
-            'first' => '06:00:00',
-            'second' => '14:00:00',
-            'third' => '22:00:00'
-        ];
-        return $date . ' ' . $times[$shift];
+    private function createBackfill($dispatcherId, $deskId, $shift, $date) {
+        $sql = "INSERT INTO assignment_log
+                (dispatcher_id, desk_id, shift, work_date, assignment_source, pay_type)
+                VALUES (?, ?, ?, ?, 'backfill', 'straight')";
+        return dbInsert($sql, [$dispatcherId, $deskId, $shift, $date]);
+    }
+
+    /**
+     * Create new vacancy
+     */
+    private function createVacancy($deskId, $shift, $date, $reason) {
+        $sql = "INSERT INTO vacancies
+                (desk_id, shift, vacancy_date, reason, status)
+                VALUES (?, ?, ?, ?, 'open')";
+        return dbInsert($sql, [$deskId, $shift, $date, $reason]);
+    }
+
+    /**
+     * Log assignment
+     */
+    private function logAssignment($vacancy, $option, $rank, $type) {
+        $sql = "INSERT INTO assignment_log
+                (dispatcher_id, desk_id, shift, work_date, assignment_source, pay_type, calculated_cost)
+                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        return dbInsert($sql, [
+            $option['dispatcher_id'],
+            $vacancy['desk_id'],
+            $vacancy['shift'],
+            $vacancy['vacancy_date'],
+            $type,
+            $option['pay_type'],
+            $option['cost']
+        ]);
     }
 
     /**
      * Get vacancy details
      */
-    private function getVacancy($vacancyId) {
-        $sql = "SELECT v.*, d.name as desk_name
+    private static function getVacancy($vacancyId) {
+        $sql = "SELECT v.*, d.name as desk_name, div.name as division_name, div.id as division_id
                 FROM vacancies v
-                JOIN desks d ON v.desk_id = d.id
+                INNER JOIN desks d ON v.desk_id = d.id
+                INNER JOIN divisions div ON d.division_id = div.id
                 WHERE v.id = ?";
         return dbQueryOne($sql, [$vacancyId]);
     }
 
     /**
-     * Record the fill in the database
+     * Get all options that were considered (for display)
      */
-    private function recordFill($vacancyId, $fillDetails) {
-        dbBeginTransaction();
-        try {
-            // Insert vacancy fill record
-            $sql = "INSERT INTO vacancy_fills
-                    (vacancy_id, filled_by_dispatcher_id, fill_method, pay_type, created_cascade_vacancy, decision_log, filled_at)
-                    VALUES (?, ?, ?, ?, ?, ?, NOW())";
-            $fillId = dbInsert($sql, [
-                $vacancyId,
-                $fillDetails['dispatcher_id'],
-                $fillDetails['fill_method'],
-                $fillDetails['pay_type'],
-                $fillDetails['created_cascade_vacancy'] ? 1 : 0,
-                json_encode($this->decisionLog)
-            ]);
-
-            // Update vacancy status
-            $sql = "UPDATE vacancies SET status = 'filled' WHERE id = ?";
-            dbExecute($sql, [$vacancyId]);
-
-            // If cascading vacancy created, create it
-            if ($fillDetails['created_cascade_vacancy']) {
-                $vacancy = $this->getVacancy($vacancyId);
-                $sql = "INSERT INTO vacancies (desk_id, shift, vacancy_date, vacancy_type, status, is_planned)
-                        VALUES (?, ?, ?, 'other', 'pending', 0)";
-                $cascadeId = dbInsert($sql, [
-                    $fillDetails['cascade_desk_id'],
-                    $fillDetails['cascade_shift'],
-                    $vacancy['vacancy_date']
-                ]);
-
-                // Link the cascade
-                $sql = "UPDATE vacancy_fills SET cascade_vacancy_id = ? WHERE id = ?";
-                dbExecute($sql, [$cascadeId, $fillId]);
-
-                $fillDetails['cascade_vacancy_id'] = $cascadeId;
-            }
-
-            dbCommit();
-            $fillDetails['fill_id'] = $fillId;
-            $fillDetails['decision_log'] = $this->decisionLog;
-            return $fillDetails;
-        } catch (Exception $e) {
-            dbRollback();
-            throw $e;
-        }
+    public static function getVacancyOptions($vacancyId) {
+        $sql = "SELECT * FROM vacancy_fill_options
+                WHERE vacancy_id = ?
+                ORDER BY option_rank";
+        return dbQueryAll($sql, [$vacancyId]);
     }
 
     /**
