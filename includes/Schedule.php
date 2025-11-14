@@ -172,14 +172,17 @@ class Schedule {
                     'first' as shift,
                     CASE
                         WHEN rs.id IS NOT NULL THEN rs.relief_dispatcher_id
+                        WHEN rest_first.id IS NOT NULL THEN NULL
                         ELSE ja_first.dispatcher_id
                     END as assigned_dispatcher_id,
                     CASE
                         WHEN rs.id IS NOT NULL THEN CONCAT(disp_relief.first_name, ' ', disp_relief.last_name)
+                        WHEN rest_first.id IS NOT NULL THEN NULL
                         ELSE CONCAT(disp_first.first_name, ' ', disp_first.last_name)
                     END as dispatcher_name,
                     CASE
                         WHEN rs.id IS NOT NULL THEN 'relief'
+                        WHEN rest_first.id IS NOT NULL THEN 'vacancy'
                         ELSE 'regular'
                     END as assignment_type
                 FROM desks d
@@ -189,6 +192,8 @@ class Schedule {
                     AND ja_first.assignment_type = 'regular'
                     AND ja_first.end_date IS NULL
                 LEFT JOIN dispatchers disp_first ON ja_first.dispatcher_id = disp_first.id
+                LEFT JOIN job_rest_days rest_first ON rest_first.job_assignment_id = ja_first.id
+                    AND rest_first.day_of_week = ?
                 LEFT JOIN relief_schedules rs ON rs.desk_id = d.id
                     AND rs.shift = 'first'
                     AND rs.day_of_week = ?
@@ -205,14 +210,17 @@ class Schedule {
                     'second' as shift,
                     CASE
                         WHEN rs.id IS NOT NULL THEN rs.relief_dispatcher_id
+                        WHEN rest_second.id IS NOT NULL THEN NULL
                         ELSE ja_second.dispatcher_id
                     END as assigned_dispatcher_id,
                     CASE
                         WHEN rs.id IS NOT NULL THEN CONCAT(disp_relief.first_name, ' ', disp_relief.last_name)
+                        WHEN rest_second.id IS NOT NULL THEN NULL
                         ELSE CONCAT(disp_second.first_name, ' ', disp_second.last_name)
                     END as dispatcher_name,
                     CASE
                         WHEN rs.id IS NOT NULL THEN 'relief'
+                        WHEN rest_second.id IS NOT NULL THEN 'vacancy'
                         ELSE 'regular'
                     END as assignment_type
                 FROM desks d
@@ -222,6 +230,8 @@ class Schedule {
                     AND ja_second.assignment_type = 'regular'
                     AND ja_second.end_date IS NULL
                 LEFT JOIN dispatchers disp_second ON ja_second.dispatcher_id = disp_second.id
+                LEFT JOIN job_rest_days rest_second ON rest_second.job_assignment_id = ja_second.id
+                    AND rest_second.day_of_week = ?
                 LEFT JOIN relief_schedules rs ON rs.desk_id = d.id
                     AND rs.shift = 'second'
                     AND rs.day_of_week = ?
@@ -239,16 +249,19 @@ class Schedule {
                     CASE
                         WHEN ar.id IS NOT NULL THEN ar.atw_dispatcher_id
                         WHEN rs.id IS NOT NULL THEN rs.relief_dispatcher_id
+                        WHEN rest_third.id IS NOT NULL THEN NULL
                         ELSE ja_third.dispatcher_id
                     END as assigned_dispatcher_id,
                     CASE
                         WHEN ar.id IS NOT NULL THEN CONCAT(disp_atw.first_name, ' ', disp_atw.last_name)
                         WHEN rs.id IS NOT NULL THEN CONCAT(disp_relief.first_name, ' ', disp_relief.last_name)
+                        WHEN rest_third.id IS NOT NULL THEN NULL
                         ELSE CONCAT(disp_third.first_name, ' ', disp_third.last_name)
                     END as dispatcher_name,
                     CASE
                         WHEN ar.id IS NOT NULL THEN 'atw'
                         WHEN rs.id IS NOT NULL THEN 'relief'
+                        WHEN rest_third.id IS NOT NULL THEN 'vacancy'
                         ELSE 'regular'
                     END as assignment_type
                 FROM desks d
@@ -258,6 +271,8 @@ class Schedule {
                     AND ja_third.assignment_type = 'regular'
                     AND ja_third.end_date IS NULL
                 LEFT JOIN dispatchers disp_third ON ja_third.dispatcher_id = disp_third.id
+                LEFT JOIN job_rest_days rest_third ON rest_third.job_assignment_id = ja_third.id
+                    AND rest_third.day_of_week = ?
                 LEFT JOIN relief_schedules rs ON rs.desk_id = d.id
                     AND rs.shift = 'third'
                     AND rs.day_of_week = ?
@@ -271,7 +286,7 @@ class Schedule {
 
                 ORDER BY division_name, desk_name, FIELD(shift, 'first', 'second', 'third')";
 
-        return dbQueryAll($sql, [$dayOfWeek, $dayOfWeek, $dayOfWeek, $dayOfWeek]);
+        return dbQueryAll($sql, [$dayOfWeek, $dayOfWeek, $dayOfWeek, $dayOfWeek, $dayOfWeek, $dayOfWeek, $dayOfWeek]);
     }
 
     /**

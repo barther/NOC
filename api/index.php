@@ -242,6 +242,30 @@ try {
             $response['success'] = true;
             break;
 
+        case 'job_set_rest_days':
+            $assignmentId = $input['job_assignment_id'];
+            $restDays = $input['rest_days'];
+
+            // Delete existing rest days for this assignment
+            $sql = "DELETE FROM job_rest_days WHERE job_assignment_id = ?";
+            dbExecute($sql, [$assignmentId]);
+
+            // Insert new rest days
+            foreach ($restDays as $dayOfWeek) {
+                $sql = "INSERT INTO job_rest_days (job_assignment_id, day_of_week) VALUES (?, ?)";
+                dbInsert($sql, [$assignmentId, $dayOfWeek]);
+            }
+
+            $response['success'] = true;
+            break;
+
+        case 'job_get_rest_days':
+            $assignmentId = $input['job_assignment_id'];
+            $sql = "SELECT day_of_week FROM job_rest_days WHERE job_assignment_id = ? ORDER BY day_of_week";
+            $response['data'] = dbQueryAll($sql, [$assignmentId]);
+            $response['success'] = true;
+            break;
+
         // ============================================================
         // VACANCIES
         // ============================================================

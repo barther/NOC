@@ -51,6 +51,13 @@ Import the database schema:
 mysql -u noc_user -p noc_scheduler < database/schema.sql
 ```
 
+**IMPORTANT**: If upgrading from an earlier version, apply all migrations:
+
+```bash
+# Apply custom rest days feature
+mysql -u noc_user -p noc_scheduler < database/add_rest_days.sql
+```
+
 ### 3. Configure Database Connection
 
 Edit `config/database.php` and update the connection settings:
@@ -160,7 +167,21 @@ For each dispatcher:
    - 2 Second shifts (Sat/Sun)
    - 1 Third shift (Sat night)
 
-### 8. Set Up Around-the-World Rotation
+### 8. Configure Custom Rest Days (Optional)
+
+For assignments with non-standard rest days:
+
+1. When assigning a dispatcher to a job, check **Configure custom rest days**
+2. Select which days of the week are rest days (days OFF)
+3. Examples:
+   - **East End Second Shift**: Rest days Tuesday and Wednesday
+   - **West Division First Shift**: Rest days Monday and Friday
+4. The schedule will automatically show these as vacancies on rest days
+5. Relief dispatchers can override custom rest days if configured
+
+**Note**: If custom rest days are not configured, the system defaults to weekend relief coverage patterns.
+
+### 9. Set Up Around-the-World Rotation
 
 1. Go to **Settings** → **ATW Rotation**
 2. The system will distribute the 7th third shift across desks
@@ -273,6 +294,7 @@ Dispatchers can bid through the interface:
 - **dispatchers**: Employee records with seniority
 - **dispatcher_qualifications**: Desk qualifications
 - **job_assignments**: Current job holders
+- **job_rest_days**: Custom rest days per job assignment (e.g., Tue/Wed instead of weekends)
 - **relief_schedules**: Weekend coverage patterns
 - **atw_rotation**: Around-the-World schedule
 - **vacancies**: Open positions needing coverage
@@ -314,6 +336,8 @@ The system provides a REST API at `api/index.php`:
 - `schedule_get_range`: Get schedule for date range
 - `schedule_generate_standard_relief`: Auto-generate relief schedule
 - `schedule_generate_atw`: Auto-generate ATW rotation
+- `job_set_rest_days`: Configure custom rest days for a job assignment
+- `job_get_rest_days`: Retrieve rest days for a job assignment
 
 ### Vacancies
 
