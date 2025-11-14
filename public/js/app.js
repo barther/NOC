@@ -735,16 +735,274 @@ const App = {
         alert('✗ Error: ' + message);
     },
 
-    // Placeholder functions for modals (to be implemented)
-    showDispatcherModal: function() { alert('Dispatcher modal not yet implemented'); },
-    editDispatcher: function(id) { alert('Edit dispatcher #' + id); },
-    showDeskModal: function() { alert('Desk modal not yet implemented'); },
-    showDivisionModal: function() { alert('Division modal not yet implemented'); },
-    editDesk: function(id) { alert('Edit desk #' + id); },
-    manageDeskAssignments: function(id) { alert('Manage assignments for desk #' + id); },
-    showVacancyModal: function() { alert('Vacancy modal not yet implemented'); },
-    showHolddownModal: function() { alert('Hold-down modal not yet implemented'); },
-    viewBids: function(id) { alert('View bids for hold-down #' + id); },
+    /**
+     * Show division management modal
+     */
+    showDivisionModal: async function() {
+        const action = prompt('Division Manager\n\n1 - Add Division\n2 - List Divisions\n\nEnter option:');
+
+        if (action === '1') {
+            const name = prompt('Enter Division Name:');
+            if (!name) return;
+
+            const code = prompt('Enter Division Code:');
+            if (!code) return;
+
+            try {
+                await this.api('division_create', { name: name, code: code });
+                this.showSuccess('Division created successfully');
+                await this.loadDivisions();
+                await this.loadDesks();
+                this.showView(this.currentView);
+            } catch (error) {
+                this.showError('Failed to create division: ' + error.message);
+            }
+        } else if (action === '2') {
+            await this.loadDivisions();
+            let list = 'Current Divisions:\n\n';
+            this.data.divisions.forEach(d => {
+                list += `${d.code}: ${d.name}\n`;
+            });
+            alert(list);
+        }
+    },
+
+    /**
+     * Show desk modal
+     */
+    showDeskModal: async function() {
+        const divisionId = prompt('Enter Division ID (check Divisions list first):');
+        if (!divisionId) return;
+
+        const name = prompt('Enter Desk Name:');
+        if (!name) return;
+
+        const code = prompt('Enter Desk Code:');
+        if (!code) return;
+
+        const description = prompt('Enter Description (optional):') || '';
+
+        try {
+            await this.api('desk_create', {
+                division_id: divisionId,
+                name: name,
+                code: code,
+                description: description
+            });
+            this.showSuccess('Desk created successfully');
+            await this.loadDesks();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to create desk: ' + error.message);
+        }
+    },
+
+    /**
+     * Show dispatcher modal
+     */
+    showDispatcherModal: async function() {
+        const employeeNumber = prompt('Enter Employee Number:');
+        if (!employeeNumber) return;
+
+        const firstName = prompt('Enter First Name:');
+        if (!firstName) return;
+
+        const lastName = prompt('Enter Last Name:');
+        if (!lastName) return;
+
+        const seniorityDate = prompt('Enter Seniority Date (YYYY-MM-DD):');
+        if (!seniorityDate) return;
+
+        const classification = prompt('Enter Classification:\n1 - Extra Board\n2 - Job Holder\n3 - Qualifying\n\nEnter 1, 2, or 3:');
+        const classMap = { '1': 'extra_board', '2': 'job_holder', '3': 'qualifying' };
+        const classValue = classMap[classification] || 'extra_board';
+
+        try {
+            const result = await this.api('dispatcher_create', {
+                employee_number: employeeNumber,
+                first_name: firstName,
+                last_name: lastName,
+                seniority_date: seniorityDate,
+                classification: classValue
+            });
+            this.showSuccess('Dispatcher created successfully');
+            await this.loadDispatchers();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to create dispatcher: ' + error.message);
+        }
+    },
+
+    /**
+     * Edit dispatcher
+     */
+    editDispatcher: async function(id) {
+        const dispatcher = this.data.dispatchers.find(d => d.id == id);
+        if (!dispatcher) return;
+
+        alert(`Editing: ${dispatcher.first_name} ${dispatcher.last_name}\n\nCurrent Classification: ${this.formatClassification(dispatcher.classification)}`);
+
+        const classification = prompt('Change Classification:\n1 - Extra Board\n2 - Job Holder\n3 - Qualifying\n\nEnter 1, 2, or 3 (or Cancel to skip):');
+        if (!classification) return;
+
+        const classMap = { '1': 'extra_board', '2': 'job_holder', '3': 'qualifying' };
+        const classValue = classMap[classification];
+
+        if (!classValue) return;
+
+        try {
+            await this.api('dispatcher_update', {
+                id: id,
+                employee_number: dispatcher.employee_number,
+                first_name: dispatcher.first_name,
+                last_name: dispatcher.last_name,
+                seniority_date: dispatcher.seniority_date,
+                classification: classValue,
+                active: true
+            });
+            this.showSuccess('Dispatcher updated successfully');
+            await this.loadDispatchers();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to update dispatcher: ' + error.message);
+        }
+    },
+
+    /**
+     * Manage desk assignments
+     */
+    manageDeskAssignments: async function(deskId) {
+        const desk = this.data.desks.find(d => d.id == deskId);
+        if (!desk) return;
+
+        const action = prompt(`Manage Assignments: ${desk.name}\n\n1 - Assign First Shift\n2 - Assign Second Shift\n3 - Assign Third Shift\n4 - Assign Relief Dispatcher\n\nEnter option:`);
+
+        if (!action || action < '1' || action > '4') return;
+
+        const dispatcherId = prompt('Enter Dispatcher ID (check Dispatchers list first):');
+        if (!dispatcherId) return;
+
+        const shiftMap = { '1': 'first', '2': 'second', '3': 'third', '4': 'relief' };
+        const shift = shiftMap[action];
+
+        try {
+            if (action === '4') {
+                // Relief dispatcher - generate standard schedule
+                await this.api('schedule_generate_standard_relief', {
+                    desk_id: deskId,
+                    relief_dispatcher_id: dispatcherId
+                });
+                this.showSuccess('Relief dispatcher assigned with standard schedule');
+            } else {
+                // Regular shift assignment
+                await this.api('schedule_assign_job', {
+                    dispatcher_id: dispatcherId,
+                    desk_id: deskId,
+                    shift: shift,
+                    assignment_type: 'regular'
+                });
+                this.showSuccess(`${shift.charAt(0).toUpperCase() + shift.slice(1)} shift assigned successfully`);
+            }
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to assign: ' + error.message);
+        }
+    },
+
+    /**
+     * Edit desk
+     */
+    editDesk: function(id) {
+        alert('Edit desk: Use the Manage Assignments button to assign dispatchers to this desk.');
+    },
+
+    /**
+     * Show vacancy modal
+     */
+    showVacancyModal: async function() {
+        const deskId = prompt('Enter Desk ID:');
+        if (!deskId) return;
+
+        const shift = prompt('Enter Shift (first/second/third):');
+        if (!shift) return;
+
+        const vacancyDate = prompt('Enter Date (YYYY-MM-DD):');
+        if (!vacancyDate) return;
+
+        const typeNum = prompt('Vacancy Type:\n1 - Sick\n2 - Vacation\n3 - Training\n4 - LOA\n5 - Other\n\nEnter 1-5:');
+        const typeMap = { '1': 'sick', '2': 'vacation', '3': 'training', '4': 'loa', '5': 'other' };
+        const vacancyType = typeMap[typeNum] || 'other';
+
+        try {
+            await this.api('vacancy_create', {
+                desk_id: deskId,
+                shift: shift,
+                vacancy_date: vacancyDate,
+                vacancy_type: vacancyType,
+                is_planned: vacancyType !== 'sick' && vacancyType !== 'other'
+            });
+            this.showSuccess('Vacancy created successfully');
+            this.loadVacancies();
+        } catch (error) {
+            this.showError('Failed to create vacancy: ' + error.message);
+        }
+    },
+
+    /**
+     * Show holddown modal
+     */
+    showHolddownModal: async function() {
+        const deskId = prompt('Enter Desk ID:');
+        if (!deskId) return;
+
+        const shift = prompt('Enter Shift (first/second/third):');
+        if (!shift) return;
+
+        const startDate = prompt('Enter Start Date (YYYY-MM-DD):');
+        if (!startDate) return;
+
+        const endDate = prompt('Enter End Date (YYYY-MM-DD):');
+        if (!endDate) return;
+
+        const incumbentId = prompt('Enter Incumbent Dispatcher ID:');
+        if (!incumbentId) return;
+
+        try {
+            await this.api('holddown_post', {
+                desk_id: deskId,
+                shift: shift,
+                start_date: startDate,
+                end_date: endDate,
+                incumbent_dispatcher_id: incumbentId
+            });
+            this.showSuccess('Hold-down posted for bidding');
+            this.loadHolddowns();
+        } catch (error) {
+            this.showError('Failed to post hold-down: ' + error.message);
+        }
+    },
+
+    /**
+     * View bids for a holddown
+     */
+    viewBids: async function(id) {
+        try {
+            const bids = await this.api('holddown_bids', { holddown_id: id });
+            if (bids.length === 0) {
+                alert('No bids yet for this hold-down.');
+                return;
+            }
+
+            let msg = 'Hold-down Bids (by seniority):\n\n';
+            bids.forEach(bid => {
+                msg += `${bid.seniority_rank}. ${bid.dispatcher_name} (${bid.employee_number})\n`;
+                msg += `   Bid time: ${bid.bid_timestamp}\n\n`;
+            });
+            alert(msg);
+        } catch (error) {
+            this.showError('Failed to load bids: ' + error.message);
+        }
+    },
     awardHolddown: async function(id) {
         if (!confirm('Award this hold-down to the most senior bidder?')) return;
         try {
