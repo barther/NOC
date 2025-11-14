@@ -271,14 +271,14 @@ try {
         case 'vacancies_list':
             $sql = "SELECT v.*,
                            d.name as desk_name,
-                           div.name as division_name,
+                           division.name as division_name,
                            CONCAT(disp.first_name, ' ', disp.last_name) as incumbent_name,
                            CONCAT(filled.first_name, ' ', filled.last_name) as filled_by_name,
                            vf.fill_method,
                            vf.pay_type
                     FROM vacancies v
                     JOIN desks d ON v.desk_id = d.id
-                    JOIN divisions div ON d.division_id = div.id
+                    JOIN divisions division ON d.division_id = division.id
                     LEFT JOIN dispatchers disp ON v.incumbent_dispatcher_id = disp.id
                     LEFT JOIN vacancy_fills vf ON v.id = vf.vacancy_id
                     LEFT JOIN dispatchers filled ON vf.filled_by_dispatcher_id = filled.id
@@ -295,7 +295,7 @@ try {
                 $params[] = $input['end_date'];
             }
 
-            $sql .= " ORDER BY v.vacancy_date DESC, div.name, d.name";
+            $sql .= " ORDER BY v.vacancy_date DESC, division.name, d.name";
             $response['data'] = dbQueryAll($sql, $params);
             $response['success'] = true;
             break;

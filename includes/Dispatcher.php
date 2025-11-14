@@ -111,10 +111,10 @@ class Dispatcher {
      * Get dispatcher's current job assignment
      */
     public static function getCurrentAssignment($dispatcherId) {
-        $sql = "SELECT ja.*, d.name as desk_name, div.name as division_name
+        $sql = "SELECT ja.*, d.name as desk_name, division.name as division_name
                 FROM job_assignments ja
                 JOIN desks d ON ja.desk_id = d.id
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 WHERE ja.dispatcher_id = ? AND ja.end_date IS NULL
                 ORDER BY ja.start_date DESC
                 LIMIT 1";
@@ -125,12 +125,12 @@ class Dispatcher {
      * Get dispatcher qualifications
      */
     public static function getQualifications($dispatcherId) {
-        $sql = "SELECT dq.*, d.name as desk_name, div.name as division_name
+        $sql = "SELECT dq.*, d.name as desk_name, division.name as division_name
                 FROM dispatcher_qualifications dq
                 JOIN desks d ON dq.desk_id = d.id
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 WHERE dq.dispatcher_id = ?
-                ORDER BY div.name, d.name";
+                ORDER BY division.name, d.name";
         return dbQueryAll($sql, [$dispatcherId]);
     }
 

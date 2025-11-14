@@ -197,12 +197,12 @@ class Holddown {
     public static function getById($id) {
         $sql = "SELECT h.*,
                        d.name as desk_name,
-                       div.name as division_name,
+                       division.name as division_name,
                        CONCAT(inc.first_name, ' ', inc.last_name) as incumbent_name,
                        CONCAT(awd.first_name, ' ', awd.last_name) as awarded_name
                 FROM holddowns h
                 JOIN desks d ON h.desk_id = d.id
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 JOIN dispatchers inc ON h.incumbent_dispatcher_id = inc.id
                 LEFT JOIN dispatchers awd ON h.awarded_dispatcher_id = awd.id
                 WHERE h.id = ?";
@@ -215,13 +215,13 @@ class Holddown {
     public static function getAll($status = null) {
         $sql = "SELECT h.*,
                        d.name as desk_name,
-                       div.name as division_name,
+                       division.name as division_name,
                        CONCAT(inc.first_name, ' ', inc.last_name) as incumbent_name,
                        CONCAT(awd.first_name, ' ', awd.last_name) as awarded_name,
                        (SELECT COUNT(*) FROM holddown_bids WHERE holddown_id = h.id) as bid_count
                 FROM holddowns h
                 JOIN desks d ON h.desk_id = d.id
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 JOIN dispatchers inc ON h.incumbent_dispatcher_id = inc.id
                 LEFT JOIN dispatchers awd ON h.awarded_dispatcher_id = awd.id";
 
@@ -272,10 +272,10 @@ class Holddown {
     public static function getActiveForDispatcher($dispatcherId) {
         $sql = "SELECT h.*,
                        d.name as desk_name,
-                       div.name as division_name
+                       division.name as division_name
                 FROM holddowns h
                 JOIN desks d ON h.desk_id = d.id
-                JOIN divisions div ON d.division_id = div.id
+                JOIN divisions division ON d.division_id = division.id
                 WHERE h.awarded_dispatcher_id = ?
                     AND h.status IN ('awarded', 'active')
                     AND h.end_date >= CURDATE()
