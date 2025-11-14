@@ -44,3 +44,7 @@ package-lock.json
 .env
 .env.local
 .env.production
+
+# Data files (contain real employee information)
+data.csv
+*.csv
