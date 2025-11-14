@@ -1,0 +1,378 @@
+<?php
+/**
+ * NOC Scheduler API
+ * Unified REST API endpoint for all operations
+ */
+
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// Handle preflight requests
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/Division.php';
+require_once __DIR__ . '/../includes/Desk.php';
+require_once __DIR__ . '/../includes/Dispatcher.php';
+require_once __DIR__ . '/../includes/Schedule.php';
+require_once __DIR__ . '/../includes/VacancyEngine.php';
+require_once __DIR__ . '/../includes/Holddown.php';
+
+// Get request data
+$method = $_SERVER['REQUEST_METHOD'];
+$input = json_decode(file_get_contents('php://input'), true);
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
+
+try {
+    $response = ['success' => false, 'data' => null, 'error' => null];
+
+    switch ($action) {
+
+        // ============================================================
+        // DIVISIONS
+        // ============================================================
+        case 'divisions_list':
+            $response['data'] = Division::getAll();
+            $response['success'] = true;
+            break;
+
+        case 'division_create':
+            $id = Division::create($input['name'], $input['code']);
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'division_update':
+            Division::update($input['id'], $input['name'], $input['code'], $input['active'] ?? true);
+            $response['success'] = true;
+            break;
+
+        case 'division_delete':
+            Division::delete($input['id']);
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // DESKS
+        // ============================================================
+        case 'desks_list':
+            $response['data'] = Desk::getAll();
+            $response['success'] = true;
+            break;
+
+        case 'desk_get':
+            $response['data'] = Desk::getById($input['id']);
+            $response['success'] = true;
+            break;
+
+        case 'desk_create':
+            $id = Desk::create(
+                $input['division_id'],
+                $input['name'],
+                $input['code'],
+                $input['description'] ?? ''
+            );
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'desk_update':
+            Desk::update(
+                $input['id'],
+                $input['division_id'],
+                $input['name'],
+                $input['code'],
+                $input['description'] ?? '',
+                $input['active'] ?? true
+            );
+            $response['success'] = true;
+            break;
+
+        case 'desk_delete':
+            Desk::delete($input['id']);
+            $response['success'] = true;
+            break;
+
+        case 'desk_assignments':
+            $response['data'] = Desk::getJobAssignments($input['desk_id']);
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // DISPATCHERS
+        // ============================================================
+        case 'dispatchers_list':
+            $response['data'] = Dispatcher::getAll();
+            $response['success'] = true;
+            break;
+
+        case 'dispatcher_get':
+            $response['data'] = Dispatcher::getById($input['id']);
+            $response['success'] = true;
+            break;
+
+        case 'dispatcher_create':
+            $id = Dispatcher::create(
+                $input['employee_number'],
+                $input['first_name'],
+                $input['last_name'],
+                $input['seniority_date'],
+                $input['classification'] ?? 'extra_board'
+            );
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'dispatcher_update':
+            Dispatcher::update(
+                $input['id'],
+                $input['employee_number'],
+                $input['first_name'],
+                $input['last_name'],
+                $input['seniority_date'],
+                $input['classification'],
+                $input['active'] ?? true
+            );
+            $response['success'] = true;
+            break;
+
+        case 'dispatcher_qualifications':
+            $response['data'] = Dispatcher::getQualifications($input['dispatcher_id']);
+            $response['success'] = true;
+            break;
+
+        case 'dispatcher_set_qualification':
+            Dispatcher::setQualification(
+                $input['dispatcher_id'],
+                $input['desk_id'],
+                $input['qualified'] ?? false,
+                $input['qualifying_started'] ?? null,
+                $input['qualified_date'] ?? null
+            );
+            $response['success'] = true;
+            break;
+
+        case 'dispatcher_current_assignment':
+            $response['data'] = Dispatcher::getCurrentAssignment($input['dispatcher_id']);
+            $response['success'] = true;
+            break;
+
+        case 'dispatchers_recalculate_seniority':
+            Dispatcher::recalculateSeniorityRanks();
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // SCHEDULE & ASSIGNMENTS
+        // ============================================================
+        case 'schedule_assign_job':
+            $id = Schedule::assignJob(
+                $input['dispatcher_id'],
+                $input['desk_id'],
+                $input['shift'],
+                $input['assignment_type'] ?? 'regular',
+                $input['start_date'] ?? null
+            );
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'schedule_end_assignment':
+            Schedule::endJobAssignment($input['assignment_id'], $input['end_date'] ?? null);
+            $response['success'] = true;
+            break;
+
+        case 'schedule_set_relief':
+            Schedule::setReliefSchedule(
+                $input['desk_id'],
+                $input['relief_dispatcher_id'],
+                $input['day_of_week'],
+                $input['shift']
+            );
+            $response['success'] = true;
+            break;
+
+        case 'schedule_generate_standard_relief':
+            Schedule::generateStandardReliefSchedule(
+                $input['desk_id'],
+                $input['relief_dispatcher_id']
+            );
+            $response['success'] = true;
+            break;
+
+        case 'schedule_set_atw':
+            Schedule::setAtwRotation(
+                $input['desk_id'],
+                $input['day_of_week'],
+                $input['rotation_order'],
+                $input['atw_dispatcher_id'] ?? null
+            );
+            $response['success'] = true;
+            break;
+
+        case 'schedule_generate_atw':
+            Schedule::generateAtwRotation($input['atw_dispatcher_id'] ?? null);
+            $response['success'] = true;
+            break;
+
+        case 'schedule_get_date':
+            $response['data'] = Schedule::getScheduleForDate($input['date']);
+            $response['success'] = true;
+            break;
+
+        case 'schedule_get_range':
+            $response['data'] = Schedule::getScheduleForDateRange(
+                $input['start_date'],
+                $input['end_date']
+            );
+            $response['success'] = true;
+            break;
+
+        case 'schedule_dispatcher_schedule':
+            $response['data'] = Schedule::getDispatcherSchedule(
+                $input['dispatcher_id'],
+                $input['start_date'],
+                $input['end_date']
+            );
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // VACANCIES
+        // ============================================================
+        case 'vacancy_create':
+            $sql = "INSERT INTO vacancies (desk_id, shift, vacancy_date, vacancy_type, incumbent_dispatcher_id, is_planned, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)";
+            $id = dbInsert($sql, [
+                $input['desk_id'],
+                $input['shift'],
+                $input['vacancy_date'],
+                $input['vacancy_type'],
+                $input['incumbent_dispatcher_id'] ?? null,
+                $input['is_planned'] ?? false,
+                $input['notes'] ?? ''
+            ]);
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'vacancy_fill':
+            $engine = new VacancyEngine();
+            $result = $engine->fillVacancy($input['vacancy_id']);
+            $response['data'] = $result;
+            $response['success'] = true;
+            break;
+
+        case 'vacancies_list':
+            $sql = "SELECT v.*,
+                           d.name as desk_name,
+                           div.name as division_name,
+                           CONCAT(disp.first_name, ' ', disp.last_name) as incumbent_name,
+                           CONCAT(filled.first_name, ' ', filled.last_name) as filled_by_name,
+                           vf.fill_method,
+                           vf.pay_type
+                    FROM vacancies v
+                    JOIN desks d ON v.desk_id = d.id
+                    JOIN divisions div ON d.division_id = div.id
+                    LEFT JOIN dispatchers disp ON v.incumbent_dispatcher_id = disp.id
+                    LEFT JOIN vacancy_fills vf ON v.id = vf.vacancy_id
+                    LEFT JOIN dispatchers filled ON vf.filled_by_dispatcher_id = filled.id
+                    WHERE 1=1";
+
+            $params = [];
+            if (isset($input['status'])) {
+                $sql .= " AND v.status = ?";
+                $params[] = $input['status'];
+            }
+            if (isset($input['start_date']) && isset($input['end_date'])) {
+                $sql .= " AND v.vacancy_date BETWEEN ? AND ?";
+                $params[] = $input['start_date'];
+                $params[] = $input['end_date'];
+            }
+
+            $sql .= " ORDER BY v.vacancy_date DESC, div.name, d.name";
+            $response['data'] = dbQueryAll($sql, $params);
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // HOLDDOWNS
+        // ============================================================
+        case 'holddown_post':
+            $id = Holddown::post(
+                $input['desk_id'],
+                $input['shift'],
+                $input['start_date'],
+                $input['end_date'],
+                $input['incumbent_dispatcher_id'],
+                $input['notes'] ?? ''
+            );
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'holddown_bid':
+            $id = Holddown::submitBid(
+                $input['holddown_id'],
+                $input['dispatcher_id'],
+                $input['notes'] ?? ''
+            );
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'holddown_award':
+            $result = Holddown::award($input['holddown_id']);
+            $response['data'] = $result;
+            $response['success'] = true;
+            break;
+
+        case 'holddown_cancel':
+            Holddown::cancel($input['holddown_id'], $input['reason'] ?? '');
+            $response['success'] = true;
+            break;
+
+        case 'holddowns_list':
+            $response['data'] = Holddown::getAll($input['status'] ?? null);
+            $response['success'] = true;
+            break;
+
+        case 'holddown_bids':
+            $response['data'] = Holddown::getBids($input['holddown_id']);
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // SYSTEM CONFIG
+        // ============================================================
+        case 'config_get':
+            $sql = "SELECT * FROM system_config ORDER BY config_key";
+            $response['data'] = dbQueryAll($sql);
+            $response['success'] = true;
+            break;
+
+        case 'config_update':
+            $sql = "UPDATE system_config SET config_value = ? WHERE config_key = ?";
+            dbExecute($sql, [$input['value'], $input['key']]);
+            $response['success'] = true;
+            break;
+
+        default:
+            http_response_code(400);
+            $response['error'] = "Unknown action: $action";
+            break;
+    }
+
+} catch (Exception $e) {
+    http_response_code(500);
+    $response['success'] = false;
+    $response['error'] = $e->getMessage();
+    error_log("API Error: " . $e->getMessage());
+}
+
+echo json_encode($response);
