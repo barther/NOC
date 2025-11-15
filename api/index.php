@@ -215,6 +215,23 @@ try {
             $response['success'] = true;
             break;
 
+        case 'dispatcher_set_qualifications':
+            // Batch update qualifications for a dispatcher
+            $dispatcherId = $input['dispatcher_id'];
+            $qualifications = $input['qualifications']; // Array of {desk_id, qualified}
+
+            foreach ($qualifications as $qual) {
+                Dispatcher::setQualification(
+                    $dispatcherId,
+                    $qual['desk_id'],
+                    $qual['qualified'] ?? false,
+                    null,  // qualifying_started
+                    $qual['qualified'] ? date('Y-m-d') : null  // qualified_date
+                );
+            }
+            $response['success'] = true;
+            break;
+
         case 'dispatcher_current_assignment':
             $response['data'] = Dispatcher::getCurrentAssignment($input['dispatcher_id']);
             $response['success'] = true;
