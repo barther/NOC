@@ -476,18 +476,77 @@ try {
         // VACANCIES
         // ============================================================
         case 'vacancy_create':
-            $sql = "INSERT INTO vacancies (desk_id, shift, vacancy_date, vacancy_type, incumbent_dispatcher_id, is_planned, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)";
-            $id = dbInsert($sql, [
-                $input['desk_id'],
-                $input['shift'],
-                $input['vacancy_date'],
-                $input['vacancy_type'],
-                $input['incumbent_dispatcher_id'] ?? null,
-                $input['is_planned'] ?? false,
-                $input['notes'] ?? ''
-            ]);
-            $response['data'] = ['id' => $id];
+            $dispatcherId = $input['dispatcher_id'];
+            $absenceType = $input['absence_type']; // 'single_day', 'date_range', 'open_ended'
+            $vacancyType = $input['vacancy_type']; // 'vacation', 'sick', 'loa', etc.
+            $startDate = $input['start_date'];
+            $endDate = $input['end_date'] ?? null;
+            $notes = $input['notes'] ?? '';
+            $isPlanned = $input['is_planned'] ?? ($vacancyType !== 'sick' && $vacancyType !== 'other');
+
+            // Get dispatcher's current assignment to determine desk and shift
+            $assignment = dbQueryOne(
+                "SELECT ja.desk_id, ja.shift
+                 FROM job_assignments ja
+                 WHERE ja.dispatcher_id = ?
+                   AND ja.end_date IS NULL
+                   AND ja.assignment_type IN ('regular', 'relief')
+                 LIMIT 1",
+                [$dispatcherId]
+            );
+
+            if (!$assignment) {
+                throw new Exception("Dispatcher has no current assignment");
+            }
+
+            $deskId = $assignment['desk_id'];
+            $shift = $assignment['shift'];
+            $createdIds = [];
+
+            // Create vacancies based on absence type
+            if ($absenceType === 'single_day') {
+                // Single day absence
+                $sql = "INSERT INTO vacancies
+                        (desk_id, shift, vacancy_date, start_date, end_date, vacancy_type, absence_type, incumbent_dispatcher_id, is_planned, notes, status)
+                        VALUES (?, ?, ?, ?, ?, ?, 'single_day', ?, ?, ?, 'pending')";
+                $id = dbInsert($sql, [$deskId, $shift, $startDate, $startDate, $startDate, $vacancyType, $dispatcherId, $isPlanned, $notes]);
+                $createdIds[] = $id;
+
+            } elseif ($absenceType === 'date_range') {
+                // Multi-day absence with end date
+                if (!$endDate) {
+                    throw new Exception("End date required for date_range absence");
+                }
+
+                // Create one vacancy per day in the range
+                $currentDate = new DateTime($startDate);
+                $endDateTime = new DateTime($endDate);
+
+                while ($currentDate <= $endDateTime) {
+                    $dateStr = $currentDate->format('Y-m-d');
+                    $sql = "INSERT INTO vacancies
+                            (desk_id, shift, vacancy_date, start_date, end_date, vacancy_type, absence_type, incumbent_dispatcher_id, is_planned, notes, status)
+                            VALUES (?, ?, ?, ?, ?, ?, 'date_range', ?, ?, ?, 'pending')";
+                    $id = dbInsert($sql, [$deskId, $shift, $dateStr, $startDate, $endDate, $vacancyType, $dispatcherId, $isPlanned, $notes]);
+                    $createdIds[] = $id;
+                    $currentDate->modify('+1 day');
+                }
+
+            } elseif ($absenceType === 'open_ended') {
+                // Open-ended absence (no end date)
+                $sql = "INSERT INTO vacancies
+                        (desk_id, shift, vacancy_date, start_date, end_date, vacancy_type, absence_type, incumbent_dispatcher_id, is_planned, notes, status)
+                        VALUES (?, ?, ?, ?, NULL, ?, 'open_ended', ?, ?, ?, 'pending')";
+                $id = dbInsert($sql, [$deskId, $shift, $startDate, $startDate, $vacancyType, $dispatcherId, $isPlanned, $notes]);
+                $createdIds[] = $id;
+            }
+
+            $response['data'] = [
+                'created_ids' => $createdIds,
+                'count' => count($createdIds),
+                'desk_id' => $deskId,
+                'shift' => $shift
+            ];
             $response['success'] = true;
             break;
 
@@ -495,6 +554,81 @@ try {
             $engine = new VacancyEngine();
             $result = $engine->fillVacancy($input['vacancy_id']);
             $response['data'] = $result;
+            $response['success'] = true;
+            break;
+
+        case 'vacancy_close_open_ended':
+            // Close an open-ended absence by setting an end date
+            $dispatcherId = $input['dispatcher_id'];
+            $endDate = $input['end_date'];
+
+            // Update the open-ended absence to have an end date
+            $sql = "UPDATE vacancies
+                    SET end_date = ?,
+                        absence_type = 'date_range',
+                        updated_at = NOW()
+                    WHERE incumbent_dispatcher_id = ?
+                      AND absence_type = 'open_ended'
+                      AND status IN ('pending', 'open')
+                      AND start_date <= ?";
+            dbExecute($sql, [$endDate, $dispatcherId, $endDate]);
+
+            // Create vacancy records for any missing days between start and end
+            $openEndedVacancies = dbQueryAll(
+                "SELECT * FROM vacancies
+                 WHERE incumbent_dispatcher_id = ?
+                   AND absence_type = 'date_range'
+                   AND start_date IS NOT NULL
+                   AND end_date = ?
+                 ORDER BY start_date",
+                [$dispatcherId, $endDate]
+            );
+
+            $createdCount = 0;
+            foreach ($openEndedVacancies as $vacancy) {
+                // Create vacancies for all days in the range
+                $currentDate = new DateTime($vacancy['start_date']);
+                $endDateTime = new DateTime($endDate);
+                $firstDate = $currentDate->format('Y-m-d');
+
+                $currentDate->modify('+1 day'); // Skip first day (already exists)
+
+                while ($currentDate <= $endDateTime) {
+                    $dateStr = $currentDate->format('Y-m-d');
+
+                    // Check if vacancy already exists for this date
+                    $exists = dbQueryOne(
+                        "SELECT id FROM vacancies
+                         WHERE incumbent_dispatcher_id = ?
+                           AND vacancy_date = ?
+                           AND desk_id = ?
+                           AND shift = ?",
+                        [$dispatcherId, $dateStr, $vacancy['desk_id'], $vacancy['shift']]
+                    );
+
+                    if (!$exists) {
+                        $sql = "INSERT INTO vacancies
+                                (desk_id, shift, vacancy_date, start_date, end_date, vacancy_type, absence_type, incumbent_dispatcher_id, is_planned, notes, status)
+                                VALUES (?, ?, ?, ?, ?, ?, 'date_range', ?, ?, ?, 'pending')";
+                        dbInsert($sql, [
+                            $vacancy['desk_id'],
+                            $vacancy['shift'],
+                            $dateStr,
+                            $vacancy['start_date'],
+                            $endDate,
+                            $vacancy['vacancy_type'],
+                            $dispatcherId,
+                            $vacancy['is_planned'],
+                            $vacancy['notes']
+                        ]);
+                        $createdCount++;
+                    }
+
+                    $currentDate->modify('+1 day');
+                }
+            }
+
+            $response['data'] = ['created_count' => $createdCount];
             $response['success'] = true;
             break;
 
