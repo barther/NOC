@@ -125,8 +125,10 @@ try {
                 $input['classification'] ?? 'extra_board',
                 $input['seniority_sequence'] ?? 1
             );
+            error_log("dispatcher_create: Created dispatcher ID $id, now recalculating ranks...");
             // Recalculate all ranks to handle out-of-order additions
             Dispatcher::recalculateSeniorityRanks(true);
+            error_log("dispatcher_create: Recalculate completed");
             $response['data'] = ['id' => $id];
             $response['success'] = true;
             break;

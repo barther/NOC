@@ -108,6 +108,8 @@ class Dispatcher {
                 ORDER BY seniority_date, seniority_sequence, id";
         $dispatchers = dbQueryAll($sql);
 
+        error_log("recalculateSeniorityRanks: Found " . count($dispatchers) . " active dispatchers");
+
         if ($useTransaction) {
             dbBeginTransaction();
         }
@@ -117,14 +119,17 @@ class Dispatcher {
             foreach ($dispatchers as $dispatcher) {
                 $updateSql = "UPDATE dispatchers SET seniority_rank = ? WHERE id = ?";
                 dbExecute($updateSql, [$rank, $dispatcher['id']]);
+                error_log("recalculateSeniorityRanks: Set rank $rank for dispatcher ID {$dispatcher['id']}");
                 $rank++;
             }
 
             if ($useTransaction) {
                 dbCommit();
+                error_log("recalculateSeniorityRanks: Transaction committed successfully");
             }
             return true;
         } catch (Exception $e) {
+            error_log("recalculateSeniorityRanks: Error - " . $e->getMessage());
             if ($useTransaction) {
                 dbRollback();
             }
