@@ -128,18 +128,32 @@ When a vacancy needs to be filled, the system checks these options **in order**,
 
 **Key facts about GADs:**
 - They are NOT assigned to a specific desk permanently
-- They work on a rotating rest day schedule (Groups A through G)
+- They work on a rotating rest day schedule (3 classes with 6-week cycles)
 - They can be used at straight time when the company is above the "GAD baseline"
 - Using a GAD at straight time is always the first choice for filling vacancies
+- Rest day system matches Extra Board to avoid Fri/Sat spanning pay period
 
-**GAD Rest Day Groups:**
-- **Group A:** Sunday-Monday off
-- **Group B:** Monday-Tuesday off
-- **Group C:** Tuesday-Wednesday off
-- **Group D:** Wednesday-Thursday off
-- **Group E:** Thursday-Friday off
-- **Group F:** Friday-Saturday off
-- **Group G:** Saturday-Sunday off
+**GAD Rest Day System (6-Week Rotation):**
+
+GADs are assigned to one of 3 classes with rotating rest day pairs:
+- **Valid rest day pairs:** Sat/Sun, Sun/Mon, Mon/Tue, Tue/Wed, Wed/Thu, Thu/Fri
+- **Note:** Fri/Sat is NOT a valid pair because it spans the pay period
+
+**The 6-week cycle:**
+- **Week 1:** Sat/Sun off
+- **Week 2:** Sun/Mon off
+- **Week 3:** Mon/Tue off
+- **Week 4:** Tue/Wed off
+- **Week 5:** Wed/Thu off
+- **Week 6:** Thu/Fri off
+- **Week 7:** Cycle repeats (Sat/Sun), creating a natural 4-day rest period
+
+**Class staggering (ensures coverage):**
+- **Class 1:** Starts at Sat/Sun
+- **Class 2:** Starts at Tue/Wed (2 pairs ahead)
+- **Class 3:** Starts at Thu/Fri (4 pairs ahead)
+
+This ensures that when Class 1 is off Sat/Sun, Class 2 is off Tue/Wed, and Class 3 is off Thu/Fri - no overlap.
 
 ---
 
