@@ -163,6 +163,27 @@ header .version-stamp {
     background: #d5dbdb;
 }
 
+.btn-group {
+    display: inline-flex;
+    gap: 0;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.btn-group .btn {
+    border-radius: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-group .btn:first-child {
+    border-radius: 5px 0 0 5px;
+}
+
+.btn-group .btn:last-child {
+    border-radius: 0 5px 5px 0;
+    border-right: none;
+}
+
 /* Tables */
 table {
     width: 100%;
