@@ -213,6 +213,39 @@ try {
             $response['success'] = true;
             break;
 
+        case 'relief_get_schedule':
+            $deskId = $input['desk_id'];
+            $sql = "SELECT day_of_week, shift FROM relief_schedules WHERE desk_id = ? AND active = 1 ORDER BY day_of_week, shift";
+            $response['data'] = dbQueryAll($sql, [$deskId]);
+            $response['success'] = true;
+            break;
+
+        case 'relief_update_schedule':
+            $deskId = $input['desk_id'];
+            $dispatcherId = $input['relief_dispatcher_id'];
+            $workDays = $input['work_days'];
+
+            dbBeginTransaction();
+            try {
+                // Clear existing relief schedule for this desk
+                $sql = "DELETE FROM relief_schedules WHERE desk_id = ?";
+                dbExecute($sql, [$deskId]);
+
+                // Insert new schedule (all 3 shifts for each work day)
+                foreach ($workDays as $dayOfWeek) {
+                    Schedule::setReliefSchedule($deskId, $dispatcherId, $dayOfWeek, 'first');
+                    Schedule::setReliefSchedule($deskId, $dispatcherId, $dayOfWeek, 'second');
+                    Schedule::setReliefSchedule($deskId, $dispatcherId, $dayOfWeek, 'third');
+                }
+
+                dbCommit();
+                $response['success'] = true;
+            } catch (Exception $e) {
+                dbRollback();
+                throw $e;
+            }
+            break;
+
         case 'schedule_set_atw':
             Schedule::setAtwRotation(
                 $input['desk_id'],
@@ -285,7 +318,8 @@ try {
                         d.first_name,
                         d.last_name,
                         d.classification,
-                        GROUP_CONCAT(jrd.day_of_week ORDER BY jrd.day_of_week) as rest_days
+                        GROUP_CONCAT(jrd.day_of_week ORDER BY jrd.day_of_week) as rest_days,
+                        'regular' as assignment_type
                     FROM job_assignments ja
                     JOIN dispatchers d ON ja.dispatcher_id = d.id
                     LEFT JOIN job_rest_days jrd ON jrd.job_assignment_id = ja.id
@@ -293,8 +327,28 @@ try {
                         AND ja.end_date IS NULL
                         AND ja.assignment_type = 'regular'
                     GROUP BY ja.id, ja.shift, ja.start_date, d.id, d.employee_number, d.first_name, d.last_name, d.classification
-                    ORDER BY FIELD(ja.shift, 'first', 'second', 'third')";
-            $response['data'] = dbQueryAll($sql, [$deskId]);
+
+                    UNION
+
+                    SELECT
+                        NULL as assignment_id,
+                        'relief' as shift,
+                        NULL as start_date,
+                        d.id as dispatcher_id,
+                        d.employee_number,
+                        d.first_name,
+                        d.last_name,
+                        d.classification,
+                        GROUP_CONCAT(DISTINCT rs.day_of_week ORDER BY rs.day_of_week) as rest_days,
+                        'relief' as assignment_type
+                    FROM relief_schedules rs
+                    JOIN dispatchers d ON rs.relief_dispatcher_id = d.id
+                    WHERE rs.desk_id = ?
+                        AND rs.active = 1
+                    GROUP BY d.id, d.employee_number, d.first_name, d.last_name, d.classification
+
+                    ORDER BY FIELD(shift, 'first', 'second', 'third', 'relief')";
+            $response['data'] = dbQueryAll($sql, [$deskId, $deskId]);
             $response['success'] = true;
             break;
 
