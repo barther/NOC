@@ -660,10 +660,10 @@ class VacancyEngine {
      * Get vacancy details
      */
     private static function getVacancy($vacancyId) {
-        $sql = "SELECT v.*, d.name as desk_name, div.name as division_name, div.id as division_id
+        $sql = "SELECT v.*, d.name as desk_name, division.name as division_name, division.id as division_id
                 FROM vacancies v
                 INNER JOIN desks d ON v.desk_id = d.id
-                INNER JOIN divisions div ON d.division_id = div.id
+                INNER JOIN divisions division ON d.division_id = division.id
                 WHERE v.id = ?";
         return dbQueryOne($sql, [$vacancyId]);
     }
