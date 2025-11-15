@@ -187,6 +187,12 @@ class VacancyEngine {
             return ['available' => false, 'reason' => 'No incumbent for this job'];
         }
 
+        // Check if incumbent is the same person who is absent (can't work their own vacancy!)
+        if (!empty($vacancy['incumbent_dispatcher_id']) && $incumbent['id'] == $vacancy['incumbent_dispatcher_id']) {
+            $this->log("  ✗ Incumbent {$incumbent['first_name']} {$incumbent['last_name']} is the one who is absent");
+            return ['available' => false, 'reason' => 'Incumbent is absent'];
+        }
+
         // Check if incumbent is available (FRA HOS)
         if (!FRAHours::isAvailableForShift($incumbent['id'], $vacancy['vacancy_date'], $vacancy['shift'])) {
             $this->log("  ✗ Incumbent {$incumbent['first_name']} {$incumbent['last_name']} not available (HOS violation)");
@@ -214,6 +220,9 @@ class VacancyEngine {
         $this->log("Step 3: Checking senior rest day overtime...");
 
         // Get dispatchers on rest day, qualified for this desk, ordered by seniority
+        // Exclude the incumbent who is absent
+        $excludeClause = !empty($vacancy['incumbent_dispatcher_id']) ? "AND d.id != ?" : "";
+
         $sql = "SELECT DISTINCT d.*,
                        dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
@@ -228,17 +237,24 @@ class VacancyEngine {
                   AND ja.end_date IS NULL
                   AND d.active = 1
                   AND d.training_protected = 0
+                  $excludeClause
                 ORDER BY d.seniority_rank ASC
                 LIMIT 1";
 
         $dayOfWeek = date('w', strtotime($vacancy['vacancy_date']));
 
-        $senior = dbQueryOne($sql, [
+        $params = [
             $vacancy['vacancy_date'],
             $vacancy['vacancy_date'],
             $vacancy['desk_id'],
             $dayOfWeek
-        ]);
+        ];
+
+        if (!empty($vacancy['incumbent_dispatcher_id'])) {
+            $params[] = $vacancy['incumbent_dispatcher_id'];
+        }
+
+        $senior = dbQueryOne($sql, $params);
 
         if (!$senior) {
             $this->log("  ✗ No senior dispatcher on rest day");
@@ -272,6 +288,9 @@ class VacancyEngine {
         $this->log("Step 4: Checking junior same-shift diversion (with GAD backfill)...");
 
         // Get most junior dispatcher on same shift at different desk
+        // Exclude the incumbent who is absent
+        $excludeClause = !empty($vacancy['incumbent_dispatcher_id']) ? "AND d.id != ?" : "";
+
         $sql = "SELECT DISTINCT d.*, ja.desk_id as current_desk_id, ja.shift as current_shift,
                        dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
@@ -287,16 +306,23 @@ class VacancyEngine {
                   AND dq.desk_id = ?
                   AND d.active = 1
                   AND d.training_protected = 0
+                  $excludeClause
                 ORDER BY d.seniority_rank DESC
                 LIMIT 1";
 
-        $junior = dbQueryOne($sql, [
+        $params = [
             $vacancy['vacancy_date'],
             $vacancy['vacancy_date'],
             $vacancy['shift'],
             $vacancy['desk_id'],
             $vacancy['desk_id']
-        ]);
+        ];
+
+        if (!empty($vacancy['incumbent_dispatcher_id'])) {
+            $params[] = $vacancy['incumbent_dispatcher_id'];
+        }
+
+        $junior = dbQueryOne($sql, $params);
 
         if (!$junior) {
             $this->log("  ✗ No junior dispatcher on same shift");
@@ -342,6 +368,9 @@ class VacancyEngine {
         $this->log("Step 5: Checking junior same-shift diversion (no GAD backfill)...");
 
         // Same as step 4 but without GAD backfill requirement
+        // Exclude the incumbent who is absent
+        $excludeClause = !empty($vacancy['incumbent_dispatcher_id']) ? "AND d.id != ?" : "";
+
         $sql = "SELECT DISTINCT d.*, ja.desk_id as current_desk_id, ja.shift as current_shift,
                        dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
@@ -357,16 +386,23 @@ class VacancyEngine {
                   AND dq.desk_id = ?
                   AND d.active = 1
                   AND d.training_protected = 0
+                  $excludeClause
                 ORDER BY d.seniority_rank DESC
                 LIMIT 1";
 
-        $junior = dbQueryOne($sql, [
+        $params = [
             $vacancy['vacancy_date'],
             $vacancy['vacancy_date'],
             $vacancy['shift'],
             $vacancy['desk_id'],
             $vacancy['desk_id']
-        ]);
+        ];
+
+        if (!empty($vacancy['incumbent_dispatcher_id'])) {
+            $params[] = $vacancy['incumbent_dispatcher_id'];
+        }
+
+        $junior = dbQueryOne($sql, $params);
 
         if (!$junior) {
             $this->log("  ✗ No junior dispatcher available");
@@ -400,6 +436,9 @@ class VacancyEngine {
         $this->log("Step 6: Checking senior off-shift diversion (with GAD backfill)...");
 
         // Get most senior dispatcher on DIFFERENT shift
+        // Exclude the incumbent who is absent
+        $excludeClause = !empty($vacancy['incumbent_dispatcher_id']) ? "AND d.id != ?" : "";
+
         $sql = "SELECT DISTINCT d.*, ja.desk_id as current_desk_id, ja.shift as current_shift,
                        dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
@@ -414,15 +453,22 @@ class VacancyEngine {
                   AND dq.desk_id = ?
                   AND d.active = 1
                   AND d.training_protected = 0
+                  $excludeClause
                 ORDER BY d.seniority_rank ASC
                 LIMIT 1";
 
-        $senior = dbQueryOne($sql, [
+        $params = [
             $vacancy['vacancy_date'],
             $vacancy['vacancy_date'],
             $vacancy['shift'],
             $vacancy['desk_id']
-        ]);
+        ];
+
+        if (!empty($vacancy['incumbent_dispatcher_id'])) {
+            $params[] = $vacancy['incumbent_dispatcher_id'];
+        }
+
+        $senior = dbQueryOne($sql, $params);
 
         if (!$senior) {
             $this->log("  ✗ No senior off-shift dispatcher");
@@ -475,6 +521,9 @@ class VacancyEngine {
         $options = [];
 
         // Try all available dispatchers and calculate actual costs
+        // Exclude the incumbent who is absent
+        $excludeClause = !empty($vacancy['incumbent_dispatcher_id']) ? "AND d.id != ?" : "";
+
         $sql = "SELECT DISTINCT d.*,
                        dpr.hourly_rate, dpr.overtime_rate
                 FROM dispatchers d
@@ -485,15 +534,27 @@ class VacancyEngine {
                 WHERE dq.desk_id = ?
                   AND d.active = 1
                   AND d.training_protected = 0
+                  $excludeClause
                 ORDER BY d.seniority_rank";
 
-        $dispatchers = dbQueryAll($sql, [
+        $params = [
             $vacancy['vacancy_date'],
             $vacancy['vacancy_date'],
             $vacancy['desk_id']
-        ]);
+        ];
+
+        if (!empty($vacancy['incumbent_dispatcher_id'])) {
+            $params[] = $vacancy['incumbent_dispatcher_id'];
+        }
+
+        $dispatchers = dbQueryAll($sql, $params);
 
         foreach ($dispatchers as $dispatcher) {
+            // Skip the absent incumbent (belt and suspenders check)
+            if (!empty($vacancy['incumbent_dispatcher_id']) && $dispatcher['id'] == $vacancy['incumbent_dispatcher_id']) {
+                continue;
+            }
+
             if (!FRAHours::isAvailableForShift($dispatcher['id'], $vacancy['vacancy_date'], $vacancy['shift'])) {
                 continue;
             }
