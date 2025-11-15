@@ -73,6 +73,9 @@ const App = {
             case 'config':
                 this.renderConfigView();
                 break;
+            case 'help':
+                this.renderHelpView();
+                break;
         }
     },
 
@@ -1396,6 +1399,175 @@ const App = {
 
         document.getElementById('main-content').innerHTML = html;
         this.loadATWJobs();
+    },
+
+    /**
+     * Render Help View
+     */
+    renderHelpView: function() {
+        const html = `
+            <div class="toolbar">
+                <div class="toolbar-left">
+                    <h2>Help: Order of Call for Filing Vacancies</h2>
+                </div>
+            </div>
+
+            <div class="help-content" style="max-width: 1200px; margin: 0 auto;">
+                <div class="card">
+                    <div class="card-header">Introduction</div>
+                    <div class="card-body">
+                        <p>When a dispatcher is absent (vacation, sick, training, etc.), the system needs to fill that vacancy.
+                        This guide explains the <strong>order of call</strong> - the exact sequence the system follows to determine who fills the vacancy.</p>
+                        <p>The order of call follows <strong>Article 3(g)</strong> of the Norfolk Southern ATDA collective bargaining agreement.
+                        The system always tries to fill vacancies in the most cost-effective way while respecting seniority and contract rules.</p>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-header">The 7-Step Order of Call Process</div>
+                    <div class="card-body">
+                        <p>When a vacancy needs to be filled, the system checks these options <strong>in order</strong>,
+                        moving to the next step only if the current step doesn't produce a qualified dispatcher:</p>
+
+                        <div style="margin: 20px 0;">
+                            <h3 style="color: #2c3e50; margin-top: 20px;">Step 1: GAD (Guaranteed Assigned Dispatcher) - Straight Time</h3>
+                            <p><strong>Who gets checked:</strong> The most senior GAD who is qualified for the desk.</p>
+                            <p><strong>Requirements:</strong></p>
+                            <ul>
+                                <li>Must be qualified for the desk that needs coverage</li>
+                                <li>Must NOT be on a rest day</li>
+                                <li>Must NOT be training protected</li>
+                                <li>Must have enough rest to meet FRA requirements</li>
+                            </ul>
+                            <p><strong>Pay:</strong> Straight time (no overtime)</p>
+                            <p><strong>Why this comes first:</strong> Using a GAD at straight time is the most cost-effective option.</p>
+
+                            <h3 style="color: #2c3e50; margin-top: 30px;">Step 2: Incumbent Overtime</h3>
+                            <p><strong>Who gets checked:</strong> The regular job holder for that specific desk/shift.</p>
+                            <p><strong>Requirements:</strong> Must be available and meet FRA hours of service requirements.</p>
+                            <p><strong>Pay:</strong> Overtime</p>
+                            <p><strong>Why this comes second:</strong> The person who normally works this position knows it best.</p>
+
+                            <h3 style="color: #2c3e50; margin-top: 30px;">Step 3: Senior Rest Day Overtime</h3>
+                            <p><strong>Who gets checked:</strong> The most senior qualified dispatcher who is currently on their rest day.</p>
+                            <p><strong>Pay:</strong> Overtime</p>
+                            <p><strong>Why this comes third:</strong> Seniority matters. More senior employees get first shot at overtime opportunities.</p>
+
+                            <h3 style="color: #2c3e50; margin-top: 30px;">Step 4: Junior Same-Shift Diversion (with GAD Backfill)</h3>
+                            <p><strong>Who gets checked:</strong> The most junior dispatcher working on the same shift but on a different desk.</p>
+                            <p><strong>Special requirement:</strong> A GAD must be available to backfill the position that this dispatcher leaves.</p>
+                            <p><strong>Pay:</strong> Depends on GAD baseline (see below)</p>
+
+                            <h3 style="color: #2c3e50; margin-top: 30px;">Step 5: Junior Same-Shift Diversion (no GAD Backfill)</h3>
+                            <p><strong>Who gets checked:</strong> The most junior dispatcher on the same shift.</p>
+                            <p><strong>Special note:</strong> This creates a cascade vacancy - the desk they leave becomes vacant and needs to be filled.</p>
+
+                            <h3 style="color: #2c3e50; margin-top: 30px;">Step 6: Senior Off-Shift Diversion (with GAD Backfill)</h3>
+                            <p><strong>Who gets checked:</strong> The most senior dispatcher working on a different shift.</p>
+                            <p><strong>Special requirement:</strong> A GAD must be available to backfill their position.</p>
+
+                            <h3 style="color: #2c3e50; margin-top: 30px;">Step 7: Least Cost Fallback</h3>
+                            <p><strong>Who gets checked:</strong> All qualified dispatchers, using actual cost calculations.</p>
+                            <p><strong>How it works:</strong> The system calculates the actual cost for every possible option and selects the cheapest one.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-header">Key Concepts</div>
+                    <div class="card-body">
+                        <h3 style="color: #2c3e50;">What is a GAD?</h3>
+                        <p><strong>GAD</strong> stands for <strong>Guaranteed Assigned Dispatcher</strong>. GADs are part of an unassigned pool specifically used to fill vacancies.</p>
+                        <p><strong>Key facts about GADs:</strong></p>
+                        <ul>
+                            <li>They are NOT assigned to a specific desk permanently</li>
+                            <li>They work on a rotating rest day schedule (Groups A through G)</li>
+                            <li>They can be used at straight time when the company is above the "GAD baseline"</li>
+                        </ul>
+                        <p><strong>GAD Rest Day Groups:</strong></p>
+                        <ul>
+                            <li>Group A: Sunday-Monday off</li>
+                            <li>Group B: Monday-Tuesday off</li>
+                            <li>Group C: Tuesday-Wednesday off</li>
+                            <li>Group D: Wednesday-Thursday off</li>
+                            <li>Group E: Thursday-Friday off</li>
+                            <li>Group F: Friday-Saturday off</li>
+                            <li>Group G: Saturday-Sunday off</li>
+                        </ul>
+
+                        <h3 style="color: #2c3e50; margin-top: 30px;">Understanding Seniority</h3>
+                        <p><strong>Seniority</strong> determines who has priority in various situations:</p>
+                        <ul>
+                            <li><strong>Most senior</strong> = hired earliest, has the lowest seniority rank number</li>
+                            <li><strong>Most junior</strong> = hired most recently, has the highest seniority rank number</li>
+                        </ul>
+                        <p><strong>When seniority matters:</strong></p>
+                        <ul>
+                            <li>Most senior gets called first for: GAD assignments, rest day overtime, off-shift diversions</li>
+                            <li>Most junior gets called first for: same-shift diversions (to protect senior rights)</li>
+                        </ul>
+
+                        <h3 style="color: #2c3e50; margin-top: 30px;">Understanding GAD Baseline</h3>
+                        <p>The <strong>GAD baseline</strong> determines whether diversions get paid at straight time or overtime.</p>
+                        <p><strong>How it's calculated:</strong> Baseline = 1.0 GAD per desk</p>
+                        <p><strong>How it affects pay:</strong></p>
+                        <ul>
+                            <li><strong>Above baseline</strong> (e.g., 12 GADs for 11 desks): Diversions are paid straight time</li>
+                            <li><strong>At or below baseline</strong> (e.g., 10 GADs for 11 desks): Diversions are paid overtime</li>
+                        </ul>
+
+                        <h3 style="color: #2c3e50; margin-top: 30px;">FRA Hours of Service</h3>
+                        <p>The <strong>Federal Railroad Administration (FRA)</strong> sets limits on how many hours railroad employees can work:</p>
+                        <ul>
+                            <li><strong>Maximum duty time:</strong> 9 hours for regular dispatchers, 12 hours for ACD</li>
+                            <li><strong>Minimum rest:</strong> 15 hours between shifts</li>
+                        </ul>
+                        <p>The system automatically checks that any assignment won't violate these safety rules.</p>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-header">Summary Flowchart</div>
+                    <div class="card-body">
+                        <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto;">
+Vacancy Occurs
+    ↓
+1. Available GAD? → YES → Assign at straight time → DONE
+    ↓ NO
+2. Incumbent available for OT? → YES → Assign at overtime → DONE
+    ↓ NO
+3. Senior dispatcher on rest day? → YES → Assign rest day OT → DONE
+    ↓ NO
+4. Junior same-shift + GAD backfill? → YES → Divert (pay by baseline) → DONE
+    ↓ NO
+5. Junior same-shift (cascade)? → YES → Divert + create new vacancy → DONE
+    ↓ NO
+6. Senior off-shift + GAD backfill? → YES → Divert (pay by baseline) → DONE
+    ↓ NO
+7. Calculate least cost option → Assign cheapest → DONE
+                        </pre>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-header">Additional Resources</div>
+                    <div class="card-body">
+                        <p>For complete detailed information, see the full documentation at:</p>
+                        <p><code>/docs/vacancy_order_of_call.md</code></p>
+                        <p style="margin-top: 15px;">This system ensures:</p>
+                        <ul>
+                            <li>Contract compliance with Article 3(g) of the ATDA agreement</li>
+                            <li>Cost effectiveness by trying straight-time options first</li>
+                            <li>Seniority protection by respecting dispatcher rankings</li>
+                            <li>Safety compliance by enforcing FRA hours of service rules</li>
+                            <li>Transparency through complete audit logs of every decision</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('main-content').innerHTML = html;
     },
 
     /**

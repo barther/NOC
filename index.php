@@ -30,6 +30,7 @@ requireAuth();
             <button class="nav-btn" data-view="holddowns">Hold-Downs</button>
             <button class="nav-btn" data-view="extraboard">Extra Board</button>
             <button class="nav-btn" data-view="config">Settings</button>
+            <button class="nav-btn" data-view="help">Help</button>
         </nav>
 
         <main id="main-content">
