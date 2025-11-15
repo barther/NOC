@@ -1128,25 +1128,40 @@ const App = {
                             <tr>
                                 <th style="text-align: left;">Shift</th>
                                 <th style="text-align: left;">Dispatcher</th>
-                                <th style="text-align: left;">Rest Days</th>
+                                <th style="text-align: left;">Schedule</th>
                                 <th style="text-align: left;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${currentAssignments.map(a => {
-                                const restDaysDisplay = a.rest_days
-                                    ? a.rest_days.split(',').map(d => daysOfWeek[parseInt(d)]).join(', ')
-                                    : 'Standard weekend pattern';
+                                let scheduleDisplay = '';
+                                let actionButton = '';
+
+                                if (a.assignment_type === 'relief') {
+                                    // Relief: show work days instead of rest days
+                                    const workDays = a.rest_days
+                                        ? a.rest_days.split(',').map(d => daysOfWeek[parseInt(d)]).join(', ')
+                                        : 'Sat & Sun';
+                                    scheduleDisplay = `<strong>Works:</strong> ${workDays} (all 3 shifts)`;
+                                    actionButton = `<button type="button" class="btn btn-sm btn-secondary" onclick="App.editReliefSchedule(${deskId}, ${a.dispatcher_id})">
+                                        Edit Schedule
+                                    </button>`;
+                                } else {
+                                    // Regular: show rest days
+                                    scheduleDisplay = a.rest_days
+                                        ? `<strong>Off:</strong> ${a.rest_days.split(',').map(d => daysOfWeek[parseInt(d)]).join(', ')}`
+                                        : 'Standard weekend pattern';
+                                    actionButton = `<button type="button" class="btn btn-sm btn-secondary" onclick="App.editRestDays(${a.assignment_id}, ${deskId}, '${a.shift}', ${a.dispatcher_id})">
+                                        Edit Rest Days
+                                    </button>`;
+                                }
+
                                 return `
                                     <tr>
                                         <td>${a.shift.charAt(0).toUpperCase() + a.shift.slice(1)}</td>
                                         <td>${a.employee_number} - ${a.first_name} ${a.last_name}</td>
-                                        <td>${restDaysDisplay}</td>
-                                        <td>
-                                            <button type="button" class="btn btn-sm btn-secondary" onclick="App.editRestDays(${a.assignment_id}, ${deskId}, '${a.shift}', ${a.dispatcher_id})">
-                                                Edit Rest Days
-                                            </button>
-                                        </td>
+                                        <td>${scheduleDisplay}</td>
+                                        <td>${actionButton}</td>
                                     </tr>
                                 `;
                             }).join('')}
@@ -1182,10 +1197,11 @@ const App = {
                     </select>
                 </div>
                 <div id="relief-info" class="alert alert-warning" style="display: none;">
-                    Relief dispatcher will automatically cover:<br>
-                    • Saturday & Sunday First Shift<br>
-                    • Saturday & Sunday Second Shift<br>
-                    • Saturday Third Shift
+                    <strong>Relief Dispatcher Coverage:</strong><br>
+                    The relief dispatcher will cover ALL THREE SHIFTS on their assigned days:<br>
+                    • <strong>Saturday:</strong> First, Second, and Third Shift<br>
+                    • <strong>Sunday:</strong> First, Second, and Third Shift<br>
+                    <small>(This provides weekend relief for all regular shift holders)</small>
                 </div>
                 <div id="rest-days-option" style="margin-top: 15px; padding: 15px; background: var(--light-bg); border-radius: 5px;">
                     <label style="display: flex; align-items: center; cursor: pointer;">
@@ -1811,6 +1827,90 @@ const App = {
             this.showView(this.currentView);
         } catch (error) {
             this.showError('Failed to update rest days: ' + error.message);
+        }
+    },
+
+    /**
+     * Edit relief dispatcher schedule (which days they work)
+     */
+    editReliefSchedule: async function(deskId, dispatcherId) {
+        const desk = this.data.desks.find(d => d.id == deskId);
+        const dispatcher = this.data.dispatchers.find(d => d.id == dispatcherId);
+
+        // Load current relief schedule
+        let currentWorkDays = [];
+        try {
+            const result = await this.api('relief_get_schedule', { desk_id: deskId });
+            // Get unique days from the schedule
+            currentWorkDays = [...new Set(result.map(r => parseInt(r.day_of_week)))];
+        } catch (error) {
+            console.error('Failed to load relief schedule:', error);
+        }
+
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        const html = `
+            <form id="edit-relief-schedule-form" onsubmit="App.submitEditReliefScheduleForm(event, ${deskId}, ${dispatcherId}); return false;">
+                <div class="alert alert-info">
+                    <strong>Relief Dispatcher:</strong> ${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}<br>
+                    <strong>Desk:</strong> ${desk.name} (${desk.code})
+                </div>
+                <p><strong>Select which days the relief dispatcher will work ALL THREE SHIFTS:</strong></p>
+                <p><small>Relief dispatcher coverage means they work first, second, AND third shift on the selected days.</small></p>
+                <div style="margin: 20px 0;">
+                    ${daysOfWeek.map((day, index) => `
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="work_day_${index}" value="1"
+                                    ${currentWorkDays.includes(index) ? 'checked' : ''}
+                                    style="margin-right: 10px; width: 18px; height: 18px;">
+                                <span style="font-size: 1.1em;"><strong>${day}</strong> - All 3 shifts (First, Second, Third)</span>
+                            </label>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="alert alert-warning">
+                    <strong>Standard Pattern:</strong> Saturday and Sunday (all shifts) is the typical relief schedule.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Schedule</button>
+                </div>
+            </form>
+        `;
+
+        this.showModal('Edit Relief Schedule', html);
+    },
+
+    submitEditReliefScheduleForm: async function(event, deskId, dispatcherId) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+
+        const workDays = [];
+        for (let i = 0; i < 7; i++) {
+            if (formData.get(`work_day_${i}`) === '1') {
+                workDays.push(i);
+            }
+        }
+
+        if (workDays.length === 0) {
+            this.showError('Please select at least one day for relief coverage');
+            return;
+        }
+
+        try {
+            await this.api('relief_update_schedule', {
+                desk_id: deskId,
+                relief_dispatcher_id: dispatcherId,
+                work_days: workDays
+            });
+
+            this.showSuccess('Relief schedule updated successfully');
+            this.closeModal();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to update relief schedule: ' + error.message);
         }
     },
 
