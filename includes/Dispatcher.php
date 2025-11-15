@@ -48,9 +48,12 @@ class Dispatcher {
      * NOTE: Caller should call recalculateSeniorityRanks() after this to set correct ranks
      */
     public static function create($employeeNumber, $firstName, $lastName, $seniorityDate, $classification = 'extra_board', $senioritySequence = 1) {
-        // Use temporary high rank to avoid conflicts
-        // Caller must recalculate ranks to set correct values
-        $tempRank = 999999;
+        // Use temporary high rank to avoid conflicts during creation
+        // Each dispatcher gets a unique temp rank (999999, 999998, 999997, etc.)
+        // Count existing active dispatchers to generate unique temp rank
+        $countSql = "SELECT COUNT(*) as count FROM dispatchers WHERE active = 1";
+        $result = dbQueryOne($countSql);
+        $tempRank = 999999 - $result['count'];
 
         $sql = "INSERT INTO dispatchers (employee_number, first_name, last_name, seniority_date, seniority_rank, seniority_sequence, classification)
                 VALUES (?, ?, ?, ?, ?, ?, ?)";
@@ -115,6 +118,18 @@ class Dispatcher {
         }
 
         try {
+            // PASS 1: Set all to temporary negative ranks to avoid conflicts
+            // This ensures no conflicts with the final ranks we're about to assign
+            error_log("recalculateSeniorityRanks: Pass 1 - Setting temporary ranks");
+            $tempRank = -1;
+            foreach ($dispatchers as $dispatcher) {
+                $updateSql = "UPDATE dispatchers SET seniority_rank = ? WHERE id = ?";
+                dbExecute($updateSql, [$tempRank, $dispatcher['id']]);
+                $tempRank--;
+            }
+
+            // PASS 2: Set final ranks in correct order
+            error_log("recalculateSeniorityRanks: Pass 2 - Setting final ranks");
             $rank = 1;
             foreach ($dispatchers as $dispatcher) {
                 $updateSql = "UPDATE dispatchers SET seniority_rank = ? WHERE id = ?";
