@@ -149,6 +149,18 @@ try {
                     JOIN desks d ON rs.desk_id = d.id
                     WHERE rs.active = 1
 
+                    UNION
+
+                    SELECT DISTINCT
+                        ja.dispatcher_id,
+                        aj.name as desk_name,
+                        'ATW' as shift
+                    FROM job_assignments ja
+                    JOIN atw_jobs aj ON ja.atw_job_id = aj.id
+                    WHERE ja.end_date IS NULL
+                        AND ja.assignment_type = 'atw'
+                        AND aj.active = 1
+
                     ORDER BY dispatcher_id";
             $response['data'] = dbQueryAll($sql);
             $response['success'] = true;

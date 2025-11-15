@@ -303,19 +303,19 @@ class Schedule {
                     division.name as division_name,
                     'third' as shift,
                     CASE
-                        WHEN ar.id IS NOT NULL THEN ar.atw_dispatcher_id
+                        WHEN atw_sched.id IS NOT NULL THEN atw_assign.dispatcher_id
                         WHEN rs.id IS NOT NULL THEN rs.relief_dispatcher_id
                         WHEN rest_third.id IS NOT NULL THEN NULL
                         ELSE ja_third.dispatcher_id
                     END as assigned_dispatcher_id,
                     CASE
-                        WHEN ar.id IS NOT NULL THEN CONCAT(disp_atw.first_name, ' ', disp_atw.last_name)
+                        WHEN atw_sched.id IS NOT NULL THEN CONCAT(disp_atw.first_name, ' ', disp_atw.last_name)
                         WHEN rs.id IS NOT NULL THEN CONCAT(disp_relief.first_name, ' ', disp_relief.last_name)
                         WHEN rest_third.id IS NOT NULL THEN NULL
                         ELSE CONCAT(disp_third.first_name, ' ', disp_third.last_name)
                     END as dispatcher_name,
                     CASE
-                        WHEN ar.id IS NOT NULL THEN 'atw'
+                        WHEN atw_sched.id IS NOT NULL THEN 'atw'
                         WHEN rs.id IS NOT NULL THEN 'relief'
                         WHEN rest_third.id IS NOT NULL THEN 'vacancy'
                         ELSE 'regular'
@@ -334,10 +334,14 @@ class Schedule {
                     AND rs.day_of_week = ?
                     AND rs.active = 1
                 LEFT JOIN dispatchers disp_relief ON rs.relief_dispatcher_id = disp_relief.id
-                LEFT JOIN atw_rotation ar ON ar.desk_id = d.id
-                    AND ar.day_of_week = ?
-                    AND ar.active = 1
-                LEFT JOIN dispatchers disp_atw ON ar.atw_dispatcher_id = disp_atw.id
+                LEFT JOIN atw_schedules atw_sched ON atw_sched.desk_id = d.id
+                    AND atw_sched.day_of_week = ?
+                    AND atw_sched.shift = 'third'
+                    AND atw_sched.active = 1
+                LEFT JOIN job_assignments atw_assign ON atw_assign.atw_job_id = atw_sched.atw_job_id
+                    AND atw_assign.assignment_type = 'atw'
+                    AND atw_assign.end_date IS NULL
+                LEFT JOIN dispatchers disp_atw ON atw_assign.dispatcher_id = disp_atw.id
                 WHERE d.active = 1
 
                 ORDER BY division_name, desk_name, FIELD(shift, 'first', 'second', 'third')";
