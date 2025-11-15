@@ -319,8 +319,15 @@ const App = {
             html += `<div class="schedule-cell schedule-header">${this.formatDayHeader(day)}</div>`;
         });
 
-        // Get all active dispatchers sorted by seniority
-        const dispatchers = this.data.dispatchers.filter(d => d.active).sort((a, b) => a.seniority_rank - b.seniority_rank);
+        // Get all active dispatchers sorted by last name
+        const dispatchers = this.data.dispatchers.filter(d => d.active).sort((a, b) => {
+            const lastNameA = a.last_name.toLowerCase();
+            const lastNameB = b.last_name.toLowerCase();
+            if (lastNameA < lastNameB) return -1;
+            if (lastNameA > lastNameB) return 1;
+            // If last names are the same, sort by first name
+            return a.first_name.toLowerCase().localeCompare(b.first_name.toLowerCase());
+        });
 
         dispatchers.forEach(dispatcher => {
             // One row per dispatcher
