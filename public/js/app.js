@@ -900,10 +900,16 @@ const App = {
                         <input type="text" name="last_name" required placeholder="Smith">
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Seniority Date *</label>
-                    <input type="date" name="seniority_date" required>
-                    <small>Seniority rank will be calculated automatically based on this date</small>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label>Seniority Date *</label>
+                        <input type="date" name="seniority_date" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Seniority Sequence *</label>
+                        <input type="number" name="seniority_sequence" value="1" min="1" required>
+                        <small>For same date, 1=most senior, 2=next, etc.</small>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Classification *</label>
@@ -930,6 +936,7 @@ const App = {
             first_name: form.first_name.value,
             last_name: form.last_name.value,
             seniority_date: form.seniority_date.value,
+            seniority_sequence: parseInt(form.seniority_sequence.value),
             classification: form.classification.value
         };
 
