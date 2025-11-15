@@ -2,9 +2,25 @@
 -- Implements role-based access control (admin vs read-only)
 -- Creates comprehensive audit log for all data modifications
 
--- Add role column to users table (if it doesn't exist)
+-- Create users table if it doesn't exist
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL COMMENT 'Bcrypt hash',
+    role ENUM('admin', 'read_only') DEFAULT 'read_only' COMMENT 'User access level',
+    active TINYINT(1) DEFAULT 1 COMMENT 'User account status',
+    last_login DATETIME NULL COMMENT 'Last login timestamp',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_username (username),
+    INDEX idx_role (role),
+    INDEX idx_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='System users with role-based access';
+
+-- If table already existed, add missing columns conditionally
 SET @dbname = DATABASE();
 SET @tablename = "users";
+
+-- Add role column if it doesn't exist (for tables created before this migration)
 SET @columnname = "role";
 SET @preparedStatement = (SELECT IF(
   (
@@ -21,7 +37,7 @@ PREPARE addRoleColumn FROM @preparedStatement;
 EXECUTE addRoleColumn;
 DEALLOCATE PREPARE addRoleColumn;
 
--- Add active column to users table (if it doesn't exist)
+-- Add active column if it doesn't exist
 SET @columnname = "active";
 SET @preparedStatement = (SELECT IF(
   (
@@ -38,7 +54,7 @@ PREPARE addActiveColumn FROM @preparedStatement;
 EXECUTE addActiveColumn;
 DEALLOCATE PREPARE addActiveColumn;
 
--- Add last_login column to users table (if it doesn't exist)
+-- Add last_login column if it doesn't exist
 SET @columnname = "last_login";
 SET @preparedStatement = (SELECT IF(
   (
