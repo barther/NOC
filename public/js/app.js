@@ -148,7 +148,7 @@ const App = {
      */
     renderScheduleView: function() {
         const today = new Date();
-        const startDate = this.formatDate(this.getMonday(today));
+        const startDate = this.formatDate(this.getSaturday(today));
         const endDate = this.formatDate(new Date(new Date(startDate).getTime() + 6 * 24 * 60 * 60 * 1000));
 
         // Default to desk view if not set
@@ -190,7 +190,7 @@ const App = {
     switchScheduleView: function(mode) {
         this.scheduleViewMode = mode;
         const startDateInput = document.getElementById('schedule-start-date');
-        const startDate = startDateInput ? startDateInput.value : this.formatDate(this.getMonday(new Date()));
+        const startDate = startDateInput ? startDateInput.value : this.formatDate(this.getSaturday(new Date()));
         this.renderScheduleGrid(startDate);
 
         // Update button states
@@ -207,7 +207,7 @@ const App = {
      */
     loadSchedule: async function() {
         const startDateInput = document.getElementById('schedule-start-date');
-        const startDate = startDateInput ? startDateInput.value : this.formatDate(this.getMonday(new Date()));
+        const startDate = startDateInput ? startDateInput.value : this.formatDate(this.getSaturday(new Date()));
 
         // Calculate end date (6 days after start = full week Mon-Sun)
         // Force local timezone to avoid date shifting issues
@@ -487,8 +487,20 @@ const App = {
                 const cell = document.getElementById(`assignment-${assignment.dispatcher_id}`);
                 if (cell) {
                     if (assignment.desk_name) {
-                        const shiftLabel = assignment.shift.charAt(0).toUpperCase() + assignment.shift.slice(1);
-                        cell.innerHTML = `${assignment.desk_name} - ${shiftLabel}`;
+                        // Handle different assignment types
+                        let displayText = '';
+                        if (assignment.shift === 'ATW') {
+                            // For ATW, desk_name is actually the ATW job name
+                            displayText = `${assignment.desk_name}`;
+                        } else if (assignment.shift === 'relief') {
+                            // For relief, show desk name with "Relief" label
+                            displayText = `${assignment.desk_name} - Relief`;
+                        } else {
+                            // For regular assignments, show desk and shift
+                            const shiftLabel = assignment.shift.charAt(0).toUpperCase() + assignment.shift.slice(1);
+                            displayText = `${assignment.desk_name} - ${shiftLabel}`;
+                        }
+                        cell.innerHTML = displayText;
                     } else {
                         cell.innerHTML = '<span class="badge badge-secondary">Unassigned</span>';
                     }
@@ -569,7 +581,6 @@ const App = {
                 <td><span id="assignment-${d.id}">Loading...</span></td>
                 <td>
                     <button class="btn btn-secondary" onclick="App.editDispatcher(${d.id})">Edit</button>
-                    <button class="btn btn-secondary" onclick="App.editDispatcherReliefSchedule(${d.id}, '${d.first_name} ${d.last_name}')">Relief Schedule</button>
                     <button class="btn btn-danger" onclick="App.deleteDispatcher(${d.id}, '${d.first_name} ${d.last_name}')">Delete</button>
                 </td>
             </tr>
@@ -1454,13 +1465,18 @@ const App = {
     },
 
     /**
-     * Get Monday of week
+     * Get Saturday of week (payroll week starts Saturday)
      */
-    getMonday: function(date) {
+    getSaturday: function(date) {
         const d = new Date(date);
-        const day = d.getDay();
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        return new Date(d.setDate(diff));
+        const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+        // Calculate days to subtract to get to most recent Saturday
+        // If today is Saturday (6), diff = 0
+        // If today is Sunday (0), diff = 1 (go back to yesterday)
+        // If today is Monday (1), diff = 2 (go back 2 days)
+        // etc.
+        const diff = day === 6 ? 0 : (day + 1);
+        return new Date(d.setDate(d.getDate() - diff));
     },
 
     /**
@@ -1709,17 +1725,45 @@ const App = {
     /**
      * Edit dispatcher
      */
-    editDispatcher: function(id) {
+    editDispatcher: async function(id) {
         const dispatcher = this.data.dispatchers.find(d => d.id == id);
         if (!dispatcher) return;
 
+        // Load qualifications and relief schedule
+        const qualifications = await this.api('dispatcher_qualifications', { dispatcher_id: id });
+        const reliefSchedule = await this.api('relief_get_dispatcher_schedule', { dispatcher_id: id });
+        const qualifiedDeskIds = qualifications.filter(q => q.qualified).map(q => q.desk_id);
+
+        // Build schedule map for relief
+        const scheduleMap = {};
+        reliefSchedule.forEach(s => {
+            scheduleMap[s.day_of_week] = {
+                desk_id: s.desk_id,
+                shift: s.shift
+            };
+        });
+
+        // Group desks by division
+        const desksByDivision = {};
+        this.data.desks.forEach(desk => {
+            if (!desksByDivision[desk.division_name]) {
+                desksByDivision[desk.division_name] = [];
+            }
+            desksByDivision[desk.division_name].push(desk);
+        });
+
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const shifts = ['first', 'second', 'third'];
+
         const html = `
-            <form id="edit-dispatcher-form" onsubmit="App.submitEditDispatcherForm(event, ${id}); return false;">
+            <form id="edit-dispatcher-form" onsubmit="App.submitConsolidatedDispatcherForm(event, ${id}); return false;">
                 <div class="alert alert-info">
                     <strong>Dispatcher:</strong> ${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}<br>
                     <strong>Seniority Date:</strong> ${dispatcher.seniority_date}<br>
                     <strong>Seniority Rank:</strong> ${dispatcher.seniority_rank}
                 </div>
+
+                <!-- Classification -->
                 <div class="form-group">
                     <label>Classification *</label>
                     <select name="classification" required>
@@ -1728,14 +1772,142 @@ const App = {
                         <option value="qualifying" ${dispatcher.classification === 'qualifying' ? 'selected' : ''}>Qualifying</option>
                     </select>
                 </div>
+
+                <!-- Desk Qualifications -->
+                <div class="form-group">
+                    <label><strong>Desk Qualifications</strong></label>
+                    <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); padding: 15px; border-radius: 5px; margin-top: 10px;">
+                        ${Object.keys(desksByDivision).sort().map(divisionName => `
+                            <div style="margin-bottom: 15px;">
+                                <h4 style="color: var(--primary-color); margin-bottom: 8px; font-size: 1.1em;">${divisionName}</h4>
+                                ${desksByDivision[divisionName].map(desk => `
+                                    <div style="margin-left: 15px; margin-bottom: 5px;">
+                                        <label style="display: flex; align-items: center; cursor: pointer;">
+                                            <input type="checkbox" name="desk_${desk.id}" value="1" ${qualifiedDeskIds.includes(desk.id) ? 'checked' : ''}
+                                                   style="margin-right: 8px; width: 16px; height: 16px;">
+                                            <span>${desk.name} (${desk.code})</span>
+                                        </label>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Relief Schedule -->
+                <div class="form-group">
+                    <label><strong>Relief Schedule (Cross-Desk)</strong></label>
+                    <div style="max-height: 350px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: 5px; margin-top: 10px;">
+                        <table style="width: 100%;">
+                            <thead>
+                                <tr style="background: var(--light-bg);">
+                                    <th style="padding: 8px;">Day</th>
+                                    <th style="padding: 8px;">Desk</th>
+                                    <th style="padding: 8px;">Shift</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${daysOfWeek.map((day, dayIndex) => {
+                                    const current = scheduleMap[dayIndex] || {};
+                                    return `
+                                    <tr>
+                                        <td style="padding: 5px;"><strong>${day}</strong></td>
+                                        <td style="padding: 5px;">
+                                            <select id="relief-desk-${dayIndex}" name="relief_desk_${dayIndex}" style="width: 100%; padding: 5px;" onchange="App.updateReliefShiftOptions(${dayIndex})">
+                                                <option value="">-- Off --</option>
+                                                ${this.data.desks.map(desk => `
+                                                    <option value="${desk.id}" ${current.desk_id == desk.id ? 'selected' : ''}>
+                                                        ${desk.name}
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                        </td>
+                                        <td style="padding: 5px;">
+                                            <select id="relief-shift-${dayIndex}" name="relief_shift_${dayIndex}" style="width: 100%; padding: 5px;" ${!current.desk_id ? 'disabled' : ''}>
+                                                <option value="">--</option>
+                                                ${shifts.map(shift => `
+                                                    <option value="${shift}" ${current.shift === shift ? 'selected' : ''}>
+                                                        ${shift.charAt(0).toUpperCase() + shift.slice(1)}
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                        </td>
+                                    </tr>
+                                `}).join('')}
+                            </tbody>
+                        </table>
+                        <div class="alert alert-warning" style="margin-top: 10px; padding: 10px; font-size: 0.9em;">
+                            <strong>Example "11 22 3":</strong> Sun/Mon: 1st, Tue/Wed: 2nd, Thu: 3rd, Fri/Sat: Off
+                        </div>
+                    </div>
+                </div>
+
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="App.manageQualifications(${id})">Manage Qualifications</button>
                     <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Update</button>
+                    <button type="submit" class="btn btn-primary">Save All Changes</button>
                 </div>
             </form>
         `;
-        this.showModal('Edit Dispatcher', html);
+        this.showModal(`Edit Dispatcher: ${dispatcher.first_name} ${dispatcher.last_name}`, html);
+    },
+
+    submitConsolidatedDispatcherForm: async function(event, id) {
+        event.preventDefault();
+        const dispatcher = this.data.dispatchers.find(d => d.id == id);
+        const form = event.target;
+
+        try {
+            // Update classification
+            await this.api('dispatcher_update', {
+                id: id,
+                employee_number: dispatcher.employee_number,
+                first_name: dispatcher.first_name,
+                last_name: dispatcher.last_name,
+                seniority_date: dispatcher.seniority_date,
+                classification: form.classification.value,
+                active: true
+            });
+
+            // Update qualifications
+            const qualifications = [];
+            this.data.desks.forEach(desk => {
+                const isQualified = form[`desk_${desk.id}`] && form[`desk_${desk.id}`].checked;
+                qualifications.push({
+                    desk_id: desk.id,
+                    qualified: isQualified
+                });
+            });
+            await this.api('dispatcher_set_qualifications', {
+                dispatcher_id: id,
+                qualifications: qualifications
+            });
+
+            // Update relief schedule
+            const reliefSchedule = [];
+            for (let day = 0; day <= 6; day++) {
+                const deskId = form[`relief_desk_${day}`] ? form[`relief_desk_${day}`].value : '';
+                const shift = form[`relief_shift_${day}`] ? form[`relief_shift_${day}`].value : '';
+
+                if (deskId && shift) {
+                    reliefSchedule.push({
+                        day: day,
+                        desk_id: parseInt(deskId),
+                        shift: shift
+                    });
+                }
+            }
+            await this.api('relief_set_dispatcher_schedule', {
+                dispatcher_id: id,
+                schedule: reliefSchedule
+            });
+
+            this.showSuccess('Dispatcher updated successfully');
+            await this.loadDispatchers();
+            this.closeModal();
+            this.showView(this.currentView);
+        } catch (error) {
+            this.showError('Failed to update dispatcher: ' + error.message);
+        }
     },
 
     submitEditDispatcherForm: async function(event, id) {
