@@ -125,6 +125,8 @@ try {
                 $input['classification'] ?? 'extra_board',
                 $input['seniority_sequence'] ?? 1
             );
+            // Recalculate all ranks to handle out-of-order additions
+            Dispatcher::recalculateSeniorityRanks(true);
             $response['data'] = ['id' => $id];
             $response['success'] = true;
             break;
@@ -140,6 +142,8 @@ try {
                 $input['active'] ?? true,
                 $input['seniority_sequence'] ?? null
             );
+            // Recalculate all ranks in case date/sequence changed
+            Dispatcher::recalculateSeniorityRanks(true);
             $response['success'] = true;
             break;
 
