@@ -32,6 +32,7 @@ require_once __DIR__ . '/../includes/Schedule.php';
 require_once __DIR__ . '/../includes/VacancyEngine.php';
 require_once __DIR__ . '/../includes/Holddown.php';
 require_once __DIR__ . '/../includes/ATW.php';
+require_once __DIR__ . '/../includes/ExtraBoard.php';
 
 // Initialize ATW tables if they don't exist
 ATW::initializeTables();
@@ -816,6 +817,62 @@ try {
 
         case 'atw_get_all_coverage':
             $response['data'] = ATW::getAllCoverage();
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // EXTRA BOARD
+        // ============================================================
+        case 'extra_board_assign':
+            $id = ExtraBoard::assign(
+                $input['dispatcher_id'],
+                $input['board_class'],
+                $input['start_date'],
+                $input['cycle_start_date'] ?? null
+            );
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'extra_board_end':
+            ExtraBoard::end($input['dispatcher_id'], $input['end_date']);
+            $response['success'] = true;
+            break;
+
+        case 'extra_board_get_all':
+            $response['data'] = ExtraBoard::getAll();
+            $response['success'] = true;
+            break;
+
+        case 'extra_board_get_active':
+            $response['data'] = ExtraBoard::getActive($input['date'] ?? null);
+            $response['success'] = true;
+            break;
+
+        case 'extra_board_get_available':
+            $response['data'] = ExtraBoard::getAvailable(
+                $input['date'],
+                $input['shift'] ?? null
+            );
+            $response['success'] = true;
+            break;
+
+        case 'extra_board_get_rest_schedule':
+            $response['data'] = ExtraBoard::getRestDaySchedule(
+                $input['dispatcher_id'],
+                $input['start_date'],
+                $input['end_date']
+            );
+            $response['success'] = true;
+            break;
+
+        case 'extra_board_is_rest_day':
+            $response['data'] = [
+                'is_rest_day' => ExtraBoard::isRestDay(
+                    $input['dispatcher_id'],
+                    $input['date']
+                )
+            ];
             $response['success'] = true;
             break;
 
