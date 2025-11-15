@@ -378,7 +378,7 @@ const App = {
      */
     getDispatcherAssignmentsForDay: function(dispatcherId, date) {
         const daySchedule = this.data.schedule[date] || [];
-        const assignments = daySchedule.filter(a => a.dispatcher_id == dispatcherId && a.assignment_type !== 'vacancy');
+        const assignments = daySchedule.filter(a => a.assigned_dispatcher_id == dispatcherId && a.assignment_type !== 'vacancy');
 
         return assignments.map(a => ({
             desk_id: a.desk_id,
