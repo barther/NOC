@@ -1481,19 +1481,36 @@ const App = {
                         <p><strong>Key facts about GADs:</strong></p>
                         <ul>
                             <li>They are NOT assigned to a specific desk permanently</li>
-                            <li>They work on a rotating rest day schedule (Groups A through G)</li>
+                            <li>They work on a rotating rest day schedule (3 classes with 6-week cycles)</li>
                             <li>They can be used at straight time when the company is above the "GAD baseline"</li>
+                            <li>Rest day system matches Extra Board to avoid Fri/Sat spanning pay period</li>
                         </ul>
-                        <p><strong>GAD Rest Day Groups:</strong></p>
+
+                        <h4 style="color: #34495e; margin-top: 15px;">GAD Rest Day System (6-Week Rotation):</h4>
+                        <p>GADs are assigned to one of 3 classes with rotating rest day pairs:</p>
                         <ul>
-                            <li>Group A: Sunday-Monday off</li>
-                            <li>Group B: Monday-Tuesday off</li>
-                            <li>Group C: Tuesday-Wednesday off</li>
-                            <li>Group D: Wednesday-Thursday off</li>
-                            <li>Group E: Thursday-Friday off</li>
-                            <li>Group F: Friday-Saturday off</li>
-                            <li>Group G: Saturday-Sunday off</li>
+                            <li><strong>Valid rest day pairs:</strong> Sat/Sun, Sun/Mon, Mon/Tue, Tue/Wed, Wed/Thu, Thu/Fri</li>
+                            <li><strong>Important:</strong> Fri/Sat is NOT a valid pair because it spans the pay period</li>
                         </ul>
+
+                        <p><strong>The 6-week cycle:</strong></p>
+                        <ul>
+                            <li>Week 1: Sat/Sun off</li>
+                            <li>Week 2: Sun/Mon off</li>
+                            <li>Week 3: Mon/Tue off</li>
+                            <li>Week 4: Tue/Wed off</li>
+                            <li>Week 5: Wed/Thu off</li>
+                            <li>Week 6: Thu/Fri off</li>
+                            <li>Week 7: Cycle repeats (Sat/Sun), creating a natural 4-day rest period</li>
+                        </ul>
+
+                        <p><strong>Class staggering (ensures coverage):</strong></p>
+                        <ul>
+                            <li>Class 1: Starts at Sat/Sun</li>
+                            <li>Class 2: Starts at Tue/Wed (2 pairs ahead)</li>
+                            <li>Class 3: Starts at Thu/Fri (4 pairs ahead)</li>
+                        </ul>
+                        <p>This ensures that when Class 1 is off Sat/Sun, Class 2 is off Tue/Wed, and Class 3 is off Thu/Fri - no overlap.</p>
 
                         <h3 style="color: #2c3e50; margin-top: 30px;">Understanding Seniority</h3>
                         <p><strong>Seniority</strong> determines who has priority in various situations:</p>

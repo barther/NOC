@@ -18,38 +18,51 @@ require_once __DIR__ . '/../config/database.php';
 class GAD {
 
     /**
-     * GAD Rest Day Groups (Article 3(f))
-     * 7 groups with rotating consecutive rest days
+     * GAD Rest Day Classes (Article 3(f))
+     * 3 classes with rotating rest day pairs (6-week cycle)
+     * Same system as Extra Board to avoid Fri/Sat spanning pay period
      */
-    const REST_GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+    const REST_CLASSES = [1, 2, 3];
 
     /**
-     * Rest day schedule for each group (day of week => groups with rest)
-     * This rotates weekly
+     * Rest day pairs (6-week rotation, no Fri/Sat pair)
      */
-    const REST_SCHEDULE = [
-        // Week pattern - each group gets 2 consecutive rest days that rotate
-        'A' => [0, 1], // Sunday-Monday
-        'B' => [1, 2], // Monday-Tuesday
-        'C' => [2, 3], // Tuesday-Wednesday
-        'D' => [3, 4], // Wednesday-Thursday
-        'E' => [4, 5], // Thursday-Friday
-        'F' => [5, 6], // Friday-Saturday
-        'G' => [6, 0], // Saturday-Sunday
+    private static $restDayPairs = [
+        0 => [6, 0], // Sat/Sun
+        1 => [0, 1], // Sun/Mon
+        2 => [1, 2], // Mon/Tue
+        3 => [2, 3], // Tue/Wed
+        4 => [3, 4], // Wed/Thu
+        5 => [4, 5], // Thu/Fri
     ];
 
     /**
-     * Assign dispatcher to GAD pool with rest day group
+     * Class starting offsets (in pairs)
      */
-    public static function assignToGAD($dispatcherId, $restGroup) {
-        if (!in_array($restGroup, self::REST_GROUPS)) {
-            throw new Exception("Invalid GAD rest group. Must be A-G.");
+    private static $classOffsets = [
+        1 => 0, // Class 1 starts at Sat/Sun
+        2 => 2, // Class 2 starts at Tue/Wed
+        3 => 4, // Class 3 starts at Thu/Fri
+    ];
+
+    /**
+     * Assign dispatcher to GAD pool with rest day class and cycle start date
+     */
+    public static function assignToGAD($dispatcherId, $restClass, $cycleStartDate = null) {
+        if (!in_array($restClass, self::REST_CLASSES)) {
+            throw new Exception("Invalid GAD rest class. Must be 1-3.");
+        }
+
+        if (!$cycleStartDate) {
+            $cycleStartDate = date('Y-m-d');
         }
 
         $sql = "UPDATE dispatchers
-                SET classification = 'gad', gad_rest_group = ?
+                SET classification = 'gad',
+                    gad_rest_class = ?,
+                    gad_cycle_start_date = ?
                 WHERE id = ?";
-        return dbExecute($sql, [$restGroup, $dispatcherId]);
+        return dbExecute($sql, [$restClass, $cycleStartDate, $dispatcherId]);
     }
 
     /**
@@ -57,7 +70,9 @@ class GAD {
      */
     public static function removeFromGAD($dispatcherId) {
         $sql = "UPDATE dispatchers
-                SET classification = 'extra_board', gad_rest_group = NULL
+                SET classification = 'extra_board',
+                    gad_rest_class = NULL,
+                    gad_cycle_start_date = NULL
                 WHERE id = ?";
         return dbExecute($sql, [$dispatcherId]);
     }
@@ -88,19 +103,19 @@ class GAD {
     }
 
     /**
-     * Get GAD dispatchers by rest group
+     * Get GAD dispatchers by rest class
      */
-    public static function getGADByRestGroup($restGroup) {
-        if (!in_array($restGroup, self::REST_GROUPS)) {
-            throw new Exception("Invalid GAD rest group");
+    public static function getGADByRestClass($restClass) {
+        if (!in_array($restClass, self::REST_CLASSES)) {
+            throw new Exception("Invalid GAD rest class");
         }
 
         $sql = "SELECT * FROM dispatchers
                 WHERE classification = 'gad'
-                  AND gad_rest_group = ?
+                  AND gad_rest_class = ?
                   AND active = 1
                 ORDER BY seniority_rank";
-        return dbQueryAll($sql, [$restGroup]);
+        return dbQueryAll($sql, [$restClass]);
     }
 
     /**
@@ -108,14 +123,36 @@ class GAD {
      */
     public static function isRestDay($dispatcherId, $date) {
         $dispatcher = self::getGADInfo($dispatcherId);
-        if (!$dispatcher || !$dispatcher['gad_rest_group']) {
+        if (!$dispatcher || !$dispatcher['gad_rest_class'] || !$dispatcher['gad_cycle_start_date']) {
             return false;
         }
 
-        $dayOfWeek = (int)date('w', strtotime($date));
-        $restDays = self::REST_SCHEDULE[$dispatcher['gad_rest_group']];
+        $restDayPair = self::getRestDayPair(
+            $dispatcher['gad_rest_class'],
+            $date,
+            $dispatcher['gad_cycle_start_date']
+        );
 
-        return in_array($dayOfWeek, $restDays);
+        $dayOfWeek = (int)date('w', strtotime($date));
+
+        return in_array($dayOfWeek, $restDayPair);
+    }
+
+    /**
+     * Calculate which rest day pair is active for a GAD class on a given date
+     */
+    public static function getRestDayPair($restClass, $date, $cycleStartDate) {
+        // Calculate days since cycle start
+        $daysSinceCycleStart = floor((strtotime($date) - strtotime($cycleStartDate)) / 86400);
+
+        // Each pair lasts 7 days, cycle repeats every 6 weeks (42 days)
+        $weeksInCycle = floor($daysSinceCycleStart / 7) % 6;
+
+        // Apply class offset
+        $classOffset = self::$classOffsets[$restClass];
+        $pairIndex = ($weeksInCycle + $classOffset) % 6;
+
+        return self::$restDayPairs[$pairIndex];
     }
 
     /**
@@ -311,10 +348,10 @@ class GAD {
     }
 
     /**
-     * Get GAD rest schedule for display
+     * Get GAD rest day pairs for display
      */
-    public static function getRestSchedule() {
-        return self::REST_SCHEDULE;
+    public static function getRestDayPairs() {
+        return self::$restDayPairs;
     }
 
     /**
@@ -323,14 +360,70 @@ class GAD {
     public static function getDispatchersOnRest($date) {
         $dayOfWeek = (int)date('w', strtotime($date));
 
+        $sql = "SELECT * FROM dispatchers
+                WHERE classification = 'gad'
+                  AND active = 1
+                  AND gad_rest_class IS NOT NULL
+                  AND gad_cycle_start_date IS NOT NULL
+                ORDER BY seniority_rank";
+
+        $allGADs = dbQueryAll($sql);
         $onRest = [];
-        foreach (self::REST_SCHEDULE as $group => $restDays) {
-            if (in_array($dayOfWeek, $restDays)) {
-                $dispatchers = self::getGADByRestGroup($group);
-                $onRest[$group] = $dispatchers;
+
+        foreach ($allGADs as $gad) {
+            if (self::isRestDay($gad['id'], $date)) {
+                $onRest[] = $gad;
             }
         }
 
         return $onRest;
+    }
+
+    /**
+     * Get rest day pair label for display
+     */
+    public static function getRestDayPairLabel($pairIndex) {
+        $days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        $pair = self::$restDayPairs[$pairIndex];
+        return $days[$pair[0]] . '/' . $days[$pair[1]];
+    }
+
+    /**
+     * Get rest day schedule for a dispatcher over a date range
+     */
+    public static function getRestDaySchedule($dispatcherId, $startDate, $endDate) {
+        $dispatcher = self::getGADInfo($dispatcherId);
+
+        if (!$dispatcher || !$dispatcher['gad_rest_class'] || !$dispatcher['gad_cycle_start_date']) {
+            return [];
+        }
+
+        $schedule = [];
+        $currentDate = new DateTime($startDate);
+        $endDateTime = new DateTime($endDate);
+
+        while ($currentDate <= $endDateTime) {
+            $dateStr = $currentDate->format('Y-m-d');
+
+            $restDayPair = self::getRestDayPair(
+                $dispatcher['gad_rest_class'],
+                $dateStr,
+                $dispatcher['gad_cycle_start_date']
+            );
+
+            $dayOfWeek = (int)$currentDate->format('w');
+
+            $schedule[] = [
+                'date' => $dateStr,
+                'day_of_week' => $dayOfWeek,
+                'is_rest_day' => in_array($dayOfWeek, $restDayPair),
+                'rest_day_pair' => $restDayPair,
+                'week_in_cycle' => floor((strtotime($dateStr) - strtotime($dispatcher['gad_cycle_start_date'])) / 604800) % 6
+            ];
+
+            $currentDate->modify('+1 day');
+        }
+
+        return $schedule;
     }
 }
