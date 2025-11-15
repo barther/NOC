@@ -924,6 +924,19 @@ const App = {
                     : v.absence_type === 'date_range' ? 'Date Range'
                     : 'Open-Ended';
 
+                // Build action buttons
+                let actionButtons = '';
+                if (v.status === 'pending') {
+                    actionButtons += `<button class="btn btn-success btn-sm" onclick="App.fillVacancy(${v.id})">Fill</button> `;
+                }
+                if (v.absence_type === 'open_ended' && v.status === 'pending') {
+                    actionButtons += `<button class="btn btn-warning btn-sm" onclick="App.closeOpenEndedAbsence(${v.incumbent_dispatcher_id}, '${v.incumbent_name.replace(/'/g, "\\'")}')">Close</button> `;
+                }
+                if (v.status === 'pending') {
+                    const deleteParams = `${v.incumbent_dispatcher_id}, '${v.start_date}', '${v.absence_type}', '${v.end_date || ''}', '${v.incumbent_name.replace(/'/g, "\\'")}'`;
+                    actionButtons += `<button class="btn btn-danger btn-sm" onclick="App.deleteAbsence(${deleteParams})">Delete</button>`;
+                }
+
                 html += `
                     <tr>
                         <td><strong>${v.incumbent_name || '-'}</strong></td>
@@ -934,10 +947,7 @@ const App = {
                         <td>${v.vacancy_type}</td>
                         <td><span class="badge badge-${this.getStatusColor(v.status)}">${v.status}</span></td>
                         <td>${v.filled_by_name || '-'}</td>
-                        <td>
-                            ${v.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="App.fillVacancy(${v.id})">Fill</button>` : ''}
-                            ${v.absence_type === 'open_ended' ? `<button class="btn btn-warning btn-sm" onclick="App.closeOpenEndedAbsence(${v.incumbent_dispatcher_id}, '${v.incumbent_name}')">Close</button>` : ''}
-                        </td>
+                        <td>${actionButtons || '-'}</td>
                     </tr>
                 `;
             });
@@ -2541,6 +2551,32 @@ const App = {
             this.loadVacancies();
         } catch (error) {
             this.showError('Failed to close absence: ' + error.message);
+        }
+    },
+
+    /**
+     * Delete/cancel an absence
+     */
+    deleteAbsence: async function(dispatcherId, startDate, absenceType, endDate, dispatcherName) {
+        const absenceTypeLabel = absenceType === 'single_day' ? 'single day absence'
+            : absenceType === 'date_range' ? `absence from ${startDate} to ${endDate}`
+            : 'open-ended absence';
+
+        if (!confirm(`Delete ${absenceTypeLabel} for ${dispatcherName}?\n\nThis will remove all associated vacancy records and cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            await this.api('vacancy_delete', {
+                dispatcher_id: dispatcherId,
+                start_date: startDate,
+                absence_type: absenceType,
+                end_date: endDate || null
+            });
+            this.showSuccess('Absence deleted successfully');
+            this.loadVacancies();
+        } catch (error) {
+            this.showError('Failed to delete absence: ' + error.message);
         }
     },
 

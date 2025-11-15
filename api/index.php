@@ -666,6 +666,36 @@ try {
             $response['success'] = true;
             break;
 
+        case 'vacancy_delete':
+            // Delete absence(s) - handles single day, date range, and open-ended
+            $dispatcherId = $input['dispatcher_id'];
+            $startDate = $input['start_date'];
+            $absenceType = $input['absence_type'];
+
+            // For single_day and open_ended, delete all vacancies matching the start_date
+            // For date_range, delete all vacancies in the range (matching start_date and end_date)
+            if ($absenceType === 'date_range') {
+                $endDate = $input['end_date'];
+                $sql = "DELETE FROM vacancies
+                        WHERE incumbent_dispatcher_id = ?
+                          AND start_date = ?
+                          AND end_date = ?
+                          AND absence_type = 'date_range'
+                          AND status IN ('pending', 'open')";
+                dbExecute($sql, [$dispatcherId, $startDate, $endDate]);
+            } else {
+                // Single day or open-ended
+                $sql = "DELETE FROM vacancies
+                        WHERE incumbent_dispatcher_id = ?
+                          AND start_date = ?
+                          AND absence_type = ?
+                          AND status IN ('pending', 'open')";
+                dbExecute($sql, [$dispatcherId, $startDate, $absenceType]);
+            }
+
+            $response['success'] = true;
+            break;
+
         // ============================================================
         // HOLDDOWNS
         // ============================================================
