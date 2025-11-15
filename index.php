@@ -1,5 +1,9 @@
 <?php
+require_once __DIR__ . '/config/auth.php';
 require_once __DIR__ . '/config/version.php';
+
+// Require authentication
+requireAuth();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -15,6 +19,7 @@ require_once __DIR__ . '/config/version.php';
             <h1>NOC Scheduler</h1>
             <p class="subtitle">Network Operations Center - 24/7 Coverage Management</p>
             <div class="version-stamp">v<?php echo APP_VERSION; ?></div>
+            <a href="/logout.php" class="logout-link">Logout</a>
         </header>
 
         <nav class="main-nav">

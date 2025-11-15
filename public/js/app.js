@@ -442,22 +442,24 @@ const App = {
                     </select>
                 </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Rank</th>
-                        <th>Employee #</th>
-                        <th>Name</th>
-                        <th>Seniority Date</th>
-                        <th>Classification</th>
-                        <th>Current Assignment</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="dispatchers-table-body">
-                    ${this.renderDispatchersTable()}
-                </tbody>
-            </table>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Employee #</th>
+                            <th>Name</th>
+                            <th>Seniority Date</th>
+                            <th>Classification</th>
+                            <th>Current Assignment</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dispatchers-table-body">
+                        ${this.renderDispatchersTable()}
+                    </tbody>
+                </table>
+            </div>
         `;
 
         document.getElementById('main-content').innerHTML = html;
@@ -615,20 +617,22 @@ const App = {
                     </select>
                 </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Division</th>
-                        <th>Desk Name</th>
-                        <th>Code</th>
-                        <th>Description</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="desks-table-body">
-                    ${this.renderDesksTable()}
-                </tbody>
-            </table>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Division</th>
+                            <th>Desk Name</th>
+                            <th>Code</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="desks-table-body">
+                        ${this.renderDesksTable()}
+                    </tbody>
+                </table>
+            </div>
         `;
 
         document.getElementById('main-content').innerHTML = html;
@@ -733,20 +737,21 @@ const App = {
      */
     renderVacanciesTable: function() {
         let html = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Desk</th>
-                        <th>Shift</th>
-                        <th>Type</th>
-                        <th>Incumbent</th>
-                        <th>Status</th>
-                        <th>Filled By</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Desk</th>
+                            <th>Shift</th>
+                            <th>Type</th>
+                            <th>Incumbent</th>
+                            <th>Status</th>
+                            <th>Filled By</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         `;
 
         if (this.data.vacancies.length === 0) {
@@ -770,7 +775,7 @@ const App = {
             });
         }
 
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         document.getElementById('vacancies-container').innerHTML = html;
     },
 
@@ -816,22 +821,23 @@ const App = {
      */
     renderHolddownsTable: function() {
         let html = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>Posted</th>
-                        <th>Desk</th>
-                        <th>Shift</th>
-                        <th>Start Date</th>
-                        <th>End Date</th>
-                        <th>Incumbent</th>
-                        <th>Status</th>
-                        <th>Bids</th>
-                        <th>Awarded To</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Posted</th>
+                            <th>Desk</th>
+                            <th>Shift</th>
+                            <th>Start Date</th>
+                            <th>End Date</th>
+                            <th>Incumbent</th>
+                            <th>Status</th>
+                            <th>Bids</th>
+                            <th>Awarded To</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         `;
 
         if (this.data.holddowns.length === 0) {
@@ -860,7 +866,7 @@ const App = {
             });
         }
 
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         document.getElementById('holddowns-container').innerHTML = html;
     },
 
