@@ -41,8 +41,10 @@ class VacancyEngine {
             throw new Exception("Vacancy not found");
         }
 
-        if ($vacancy['status'] !== 'open') {
-            throw new Exception("Vacancy is not open");
+        // Only fill vacancies that are in 'pending' status
+        // (not already filled, unfilled, or cancelled)
+        if ($vacancy['status'] !== 'pending') {
+            throw new Exception("Vacancy is not in pending status (current status: {$vacancy['status']})");
         }
 
         $this->decisionLog = [];
