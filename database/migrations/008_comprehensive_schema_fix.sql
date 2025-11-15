@@ -243,10 +243,74 @@ EXECUTE addFilledAt;
 DEALLOCATE PREPARE addFilledAt;
 
 -- ============================================================
--- 3. ASSIGNMENT_LOG TABLE - Already has correct columns
+-- 3. ASSIGNMENT_LOG TABLE
 -- ============================================================
--- assignment_log already has dispatcher_id, desk_id, shift, work_date, etc.
--- These were added in previous migrations
+
+-- Update assignment_source ENUM to include all values used by VacancyEngine
+SET @tablename = "assignment_log";
+SET @columnname = "assignment_source";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE assignment_log MODIFY COLUMN assignment_source ENUM(
+    'regular',
+    'relief',
+    'atw',
+    'holddown',
+    'vacancy_fill',
+    'backfill',
+    'gad',
+    'incumbent_ot',
+    'senior_rest_ot',
+    'junior_diversion_gad',
+    'junior_diversion',
+    'senior_offshift_gad',
+    'least_cost'
+  ) NOT NULL;",
+  "SELECT 1;"
+));
+PREPARE modifyAssignmentSource FROM @preparedStatement;
+EXECUTE modifyAssignmentSource;
+DEALLOCATE PREPARE modifyAssignmentSource;
+
+-- Make actual_start_time nullable (code doesn't always set it immediately)
+SET @columnname = "actual_start_time";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE assignment_log MODIFY COLUMN actual_start_time DATETIME NULL;",
+  "SELECT 1;"
+));
+PREPARE modifyActualStartTime FROM @preparedStatement;
+EXECUTE modifyActualStartTime;
+DEALLOCATE PREPARE modifyActualStartTime;
+
+-- Make pay_type nullable in assignment_log
+SET @columnname = "pay_type";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE assignment_log MODIFY COLUMN pay_type ENUM('straight', 'overtime') NULL;",
+  "SELECT 1;"
+));
+PREPARE modifyAssignmentLogPayType FROM @preparedStatement;
+EXECUTE modifyAssignmentLogPayType;
+DEALLOCATE PREPARE modifyAssignmentLogPayType;
 
 -- ============================================================
 -- 4. GAD_AVAILABILITY_LOG TABLE
@@ -315,8 +379,19 @@ Key fixes:
    - Added dispatcher_id and filled_date (code uses these, schema had filled_by_dispatcher_id and filled_at)
    - Added hours_worked, calculated_cost columns
    - Made filled_by_dispatcher_id, filled_at, and pay_type NULLABLE (allows code to use dispatcher_id/filled_date instead)
-2. vacancies: Added reason, filled_by, filled_at columns
-3. Created gad_availability_log, vacancy_fill_options, dispatcher_pay_rates if they don't exist
+
+2. vacancies:
+   - Added reason, filled_by, filled_at columns
+
+3. assignment_log:
+   - Updated assignment_source ENUM to include VacancyEngine values: backfill, gad, incumbent_ot, senior_rest_ot,
+     junior_diversion_gad, junior_diversion, senior_offshift_gad, least_cost
+   - Made actual_start_time and pay_type NULLABLE
+
+4. Created missing tables:
+   - gad_availability_log
+   - vacancy_fill_options
+   - dispatcher_pay_rates
 
 All CREATE TABLE statements use IF NOT EXISTS for idempotency.
 All ALTER TABLE statements use prepared statements for idempotency.
