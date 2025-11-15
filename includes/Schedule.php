@@ -109,6 +109,60 @@ class Schedule {
     }
 
     /**
+     * Get relief schedule for a specific dispatcher (all desks they cover)
+     */
+    public static function getReliefScheduleForDispatcher($reliefDispatcherId) {
+        $sql = "SELECT
+                    rs.*,
+                    d.name as desk_name,
+                    d.code as desk_code
+                FROM relief_schedules rs
+                JOIN desks d ON rs.desk_id = d.id
+                WHERE rs.relief_dispatcher_id = ? AND rs.active = 1
+                ORDER BY rs.day_of_week, d.name";
+        return dbQueryAll($sql, [$reliefDispatcherId]);
+    }
+
+    /**
+     * Set full relief schedule for a dispatcher (cross-desk capable)
+     * Schedule format: [{day: 0-6, desk_id: X, shift: 'first'/'second'/'third'}]
+     */
+    public static function setReliefScheduleForDispatcher($reliefDispatcherId, $schedule) {
+        dbBeginTransaction();
+        try {
+            // Clear existing relief schedule for this dispatcher
+            $sql = "UPDATE relief_schedules SET active = 0 WHERE relief_dispatcher_id = ?";
+            dbExecute($sql, [$reliefDispatcherId]);
+
+            // Set new schedule
+            foreach ($schedule as $entry) {
+                if (isset($entry['desk_id']) && $entry['desk_id'] && isset($entry['shift'])) {
+                    self::setReliefSchedule(
+                        $entry['desk_id'],
+                        $reliefDispatcherId,
+                        $entry['day'],
+                        $entry['shift']
+                    );
+                }
+            }
+
+            dbCommit();
+            return true;
+        } catch (Exception $e) {
+            dbRollback();
+            throw $e;
+        }
+    }
+
+    /**
+     * Clear all relief schedules for a dispatcher
+     */
+    public static function clearReliefScheduleForDispatcher($reliefDispatcherId) {
+        $sql = "UPDATE relief_schedules SET active = 0 WHERE relief_dispatcher_id = ?";
+        return dbExecute($sql, [$reliefDispatcherId]);
+    }
+
+    /**
      * Set ATW rotation entry for a desk
      */
     public static function setAtwRotation($deskId, $dayOfWeek, $rotationOrder, $atwDispatcherId = null) {
