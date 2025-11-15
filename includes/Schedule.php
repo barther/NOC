@@ -78,7 +78,8 @@ class Schedule {
 
     /**
      * Generate standard relief schedule for a desk
-     * Standard: 2 first shifts, 2 second shifts, 1 third shift (typically weekends)
+     * Standard pattern: 11 22 3 (two first, two second, one third)
+     * This provides rest days for regular shift holders across the week
      */
     public static function generateStandardReliefSchedule($deskId, $reliefDispatcherId) {
         dbBeginTransaction();
@@ -87,17 +88,17 @@ class Schedule {
             $sql = "DELETE FROM relief_schedules WHERE desk_id = ?";
             dbExecute($sql, [$deskId]);
 
-            // Saturday and Sunday first shift
-            self::setReliefSchedule($deskId, $reliefDispatcherId, 6, 'first');  // Saturday
+            // Standard "11 22 3" pattern
+            // Sunday & Monday: First shift (covers first shift holder's weekend)
             self::setReliefSchedule($deskId, $reliefDispatcherId, 0, 'first');  // Sunday
+            self::setReliefSchedule($deskId, $reliefDispatcherId, 1, 'first');  // Monday
 
-            // Saturday and Sunday second shift
-            self::setReliefSchedule($deskId, $reliefDispatcherId, 6, 'second'); // Saturday
-            self::setReliefSchedule($deskId, $reliefDispatcherId, 0, 'second'); // Sunday
+            // Tuesday & Wednesday: Second shift (covers second shift holder's days off)
+            self::setReliefSchedule($deskId, $reliefDispatcherId, 2, 'second'); // Tuesday
+            self::setReliefSchedule($deskId, $reliefDispatcherId, 3, 'second'); // Wednesday
 
-            // Saturday and Sunday third shift
-            self::setReliefSchedule($deskId, $reliefDispatcherId, 6, 'third');  // Saturday night
-            self::setReliefSchedule($deskId, $reliefDispatcherId, 0, 'third');  // Sunday night
+            // Thursday: Third shift (covers third shift holder's day off)
+            self::setReliefSchedule($deskId, $reliefDispatcherId, 4, 'third');  // Thursday
 
             dbCommit();
             return true;

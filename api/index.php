@@ -223,7 +223,7 @@ try {
         case 'relief_update_schedule':
             $deskId = $input['desk_id'];
             $dispatcherId = $input['relief_dispatcher_id'];
-            $workDays = $input['work_days'];
+            $schedule = $input['schedule']; // Array of {day: 0-6, shift: 'first'|'second'|'third'}
 
             dbBeginTransaction();
             try {
@@ -231,11 +231,9 @@ try {
                 $sql = "DELETE FROM relief_schedules WHERE desk_id = ?";
                 dbExecute($sql, [$deskId]);
 
-                // Insert new schedule (all 3 shifts for each work day)
-                foreach ($workDays as $dayOfWeek) {
-                    Schedule::setReliefSchedule($deskId, $dispatcherId, $dayOfWeek, 'first');
-                    Schedule::setReliefSchedule($deskId, $dispatcherId, $dayOfWeek, 'second');
-                    Schedule::setReliefSchedule($deskId, $dispatcherId, $dayOfWeek, 'third');
+                // Insert new schedule (one shift per day)
+                foreach ($schedule as $entry) {
+                    Schedule::setReliefSchedule($deskId, $dispatcherId, $entry['day'], $entry['shift']);
                 }
 
                 dbCommit();
@@ -309,6 +307,8 @@ try {
 
         case 'desk_get_assignments':
             $deskId = $input['desk_id'];
+
+            // Get regular assignments
             $sql = "SELECT
                         ja.id as assignment_id,
                         ja.shift,
@@ -319,7 +319,8 @@ try {
                         d.last_name,
                         d.classification,
                         GROUP_CONCAT(jrd.day_of_week ORDER BY jrd.day_of_week) as rest_days,
-                        'regular' as assignment_type
+                        'regular' as assignment_type,
+                        NULL as schedule_summary
                     FROM job_assignments ja
                     JOIN dispatchers d ON ja.dispatcher_id = d.id
                     LEFT JOIN job_rest_days jrd ON jrd.job_assignment_id = ja.id
@@ -327,28 +328,64 @@ try {
                         AND ja.end_date IS NULL
                         AND ja.assignment_type = 'regular'
                     GROUP BY ja.id, ja.shift, ja.start_date, d.id, d.employee_number, d.first_name, d.last_name, d.classification
+                    ORDER BY FIELD(ja.shift, 'first', 'second', 'third')";
+            $assignments = dbQueryAll($sql, [$deskId]);
 
-                    UNION
+            // Get relief assignment if exists
+            $reliefSql = "SELECT DISTINCT
+                            d.id as dispatcher_id,
+                            d.employee_number,
+                            d.first_name,
+                            d.last_name,
+                            d.classification
+                        FROM relief_schedules rs
+                        JOIN dispatchers d ON rs.relief_dispatcher_id = d.id
+                        WHERE rs.desk_id = ? AND rs.active = 1";
+            $reliefDispatchers = dbQueryAll($reliefSql, [$deskId]);
 
-                    SELECT
-                        NULL as assignment_id,
-                        'relief' as shift,
-                        NULL as start_date,
-                        d.id as dispatcher_id,
-                        d.employee_number,
-                        d.first_name,
-                        d.last_name,
-                        d.classification,
-                        GROUP_CONCAT(DISTINCT rs.day_of_week ORDER BY rs.day_of_week) as rest_days,
-                        'relief' as assignment_type
-                    FROM relief_schedules rs
-                    JOIN dispatchers d ON rs.relief_dispatcher_id = d.id
-                    WHERE rs.desk_id = ?
-                        AND rs.active = 1
-                    GROUP BY d.id, d.employee_number, d.first_name, d.last_name, d.classification
+            // For each relief dispatcher, build their schedule summary
+            foreach ($reliefDispatchers as $reliefDispatcher) {
+                $scheduleSql = "SELECT day_of_week, shift
+                               FROM relief_schedules
+                               WHERE desk_id = ? AND relief_dispatcher_id = ? AND active = 1
+                               ORDER BY day_of_week, FIELD(shift, 'first', 'second', 'third')";
+                $schedule = dbQueryAll($scheduleSql, [$deskId, $reliefDispatcher['dispatcher_id']]);
 
-                    ORDER BY FIELD(shift, 'first', 'second', 'third', 'relief')";
-            $response['data'] = dbQueryAll($sql, [$deskId, $deskId]);
+                // Build summary like "Sun/Mon: 1st, Tue/Wed: 2nd, Thu: 3rd"
+                $dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                $shiftNames = ['first' => '1st', 'second' => '2nd', 'third' => '3rd'];
+                $byShift = [];
+                foreach ($schedule as $entry) {
+                    $shift = $entry['shift'];
+                    if (!isset($byShift[$shift])) {
+                        $byShift[$shift] = [];
+                    }
+                    $byShift[$shift][] = $dayNames[$entry['day_of_week']];
+                }
+
+                $summaryParts = [];
+                foreach ($byShift as $shift => $days) {
+                    $summaryParts[] = implode('/', $days) . ': ' . $shiftNames[$shift];
+                }
+                $summary = implode(', ', $summaryParts);
+
+                // Add relief assignment to results
+                $assignments[] = [
+                    'assignment_id' => null,
+                    'shift' => 'relief',
+                    'start_date' => null,
+                    'dispatcher_id' => $reliefDispatcher['dispatcher_id'],
+                    'employee_number' => $reliefDispatcher['employee_number'],
+                    'first_name' => $reliefDispatcher['first_name'],
+                    'last_name' => $reliefDispatcher['last_name'],
+                    'classification' => $reliefDispatcher['classification'],
+                    'rest_days' => null,
+                    'assignment_type' => 'relief',
+                    'schedule_summary' => $summary
+                ];
+            }
+
+            $response['data'] = $assignments;
             $response['success'] = true;
             break;
 
