@@ -5,15 +5,128 @@
 -- 1. GAD (Guaranteed Assigned Dispatcher) Features
 -- ============================================================
 
--- Add GAD rest day group to dispatchers (A-G groups per Article 3(f))
-ALTER TABLE dispatchers
-ADD COLUMN gad_rest_group ENUM('A', 'B', 'C', 'D', 'E', 'F', 'G') NULL COMMENT 'GAD rotating rest day group (Article 3(f))',
-ADD COLUMN training_status ENUM('none', 'in_training', 'training_complete') DEFAULT 'none' COMMENT 'Training status for order-of-call protection',
-ADD COLUMN training_protected TINYINT(1) DEFAULT 0 COMMENT 'If 1, skip in order-of-call unless desperate',
-ADD COLUMN training_start_date DATE NULL COMMENT 'When current training started',
-ADD COLUMN training_end_date DATE NULL COMMENT 'When current training ends',
-ADD COLUMN consecutive_days_worked INT DEFAULT 0 COMMENT 'Forcing tracker - consecutive days worked',
-ADD COLUMN last_work_date DATE NULL COMMENT 'Last date worked for consecutive tracking';
+-- Add columns to dispatchers table conditionally
+SET @dbname = DATABASE();
+SET @tablename = "dispatchers";
+
+-- Add gad_rest_group column if it doesn't exist (will be removed in migration 005)
+SET @columnname = "gad_rest_group";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN gad_rest_group ENUM('A', 'B', 'C', 'D', 'E', 'F', 'G') NULL COMMENT 'GAD rotating rest day group (Article 3(f))';",
+  "SELECT 1;"
+));
+PREPARE addGadRestGroup FROM @preparedStatement;
+EXECUTE addGadRestGroup;
+DEALLOCATE PREPARE addGadRestGroup;
+
+-- Add training_status column if it doesn't exist
+SET @columnname = "training_status";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN training_status ENUM('none', 'in_training', 'training_complete') DEFAULT 'none' COMMENT 'Training status for order-of-call protection';",
+  "SELECT 1;"
+));
+PREPARE addTrainingStatus FROM @preparedStatement;
+EXECUTE addTrainingStatus;
+DEALLOCATE PREPARE addTrainingStatus;
+
+-- Add training_protected column if it doesn't exist
+SET @columnname = "training_protected";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN training_protected TINYINT(1) DEFAULT 0 COMMENT 'If 1, skip in order-of-call unless desperate';",
+  "SELECT 1;"
+));
+PREPARE addTrainingProtected FROM @preparedStatement;
+EXECUTE addTrainingProtected;
+DEALLOCATE PREPARE addTrainingProtected;
+
+-- Add training_start_date column if it doesn't exist
+SET @columnname = "training_start_date";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN training_start_date DATE NULL COMMENT 'When current training started';",
+  "SELECT 1;"
+));
+PREPARE addTrainingStartDate FROM @preparedStatement;
+EXECUTE addTrainingStartDate;
+DEALLOCATE PREPARE addTrainingStartDate;
+
+-- Add training_end_date column if it doesn't exist
+SET @columnname = "training_end_date";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN training_end_date DATE NULL COMMENT 'When current training ends';",
+  "SELECT 1;"
+));
+PREPARE addTrainingEndDate FROM @preparedStatement;
+EXECUTE addTrainingEndDate;
+DEALLOCATE PREPARE addTrainingEndDate;
+
+-- Add consecutive_days_worked column if it doesn't exist
+SET @columnname = "consecutive_days_worked";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN consecutive_days_worked INT DEFAULT 0 COMMENT 'Forcing tracker - consecutive days worked';",
+  "SELECT 1;"
+));
+PREPARE addConsecutiveDays FROM @preparedStatement;
+EXECUTE addConsecutiveDays;
+DEALLOCATE PREPARE addConsecutiveDays;
+
+-- Add last_work_date column if it doesn't exist
+SET @columnname = "last_work_date";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE dispatchers ADD COLUMN last_work_date DATE NULL COMMENT 'Last date worked for consecutive tracking';",
+  "SELECT 1;"
+));
+PREPARE addLastWorkDate FROM @preparedStatement;
+EXECUTE addLastWorkDate;
+DEALLOCATE PREPARE addLastWorkDate;
 
 -- GAD baseline tracking per division
 CREATE TABLE IF NOT EXISTS gad_baseline (
