@@ -281,6 +281,38 @@ textarea:focus {
     font-weight: 600;
 }
 
+.schedule-multi-shift {
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.shift-line {
+    font-size: 0.85em;
+    padding: 3px 5px;
+    border-radius: 3px;
+    background: var(--light-bg);
+}
+
+.shift-label {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 5px;
+}
+
+.shift-first {
+    border-left: 3px solid #4CAF50;
+}
+
+.shift-second {
+    border-left: 3px solid #2196F3;
+}
+
+.shift-third {
+    border-left: 3px solid #FF9800;
+}
+
 .dispatcher-name {
     font-size: 0.9em;
     padding: 5px;

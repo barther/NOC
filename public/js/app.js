@@ -216,7 +216,7 @@ const App = {
         let html = '<div class="schedule-grid">';
 
         // Header row
-        html += '<div class="schedule-cell schedule-header">Desk / Shift</div>';
+        html += '<div class="schedule-cell schedule-header">Desk</div>';
         days.forEach(day => {
             html += `<div class="schedule-cell schedule-header">${this.formatDayHeader(day)}</div>`;
         });
@@ -228,14 +228,23 @@ const App = {
             const desks = groupedDesks[divisionName];
 
             desks.forEach(desk => {
-                ['first', 'second', 'third'].forEach(shift => {
-                    html += `<div class="schedule-cell schedule-desk">${desk.name} - ${shift.charAt(0).toUpperCase() + shift.slice(1)}</div>`;
+                // One row per desk showing all three shifts
+                html += `<div class="schedule-cell schedule-desk">${desk.name}</div>`;
 
-                    days.forEach(day => {
-                        const dateStr = this.formatDate(day);
-                        const assignment = this.getAssignmentForDay(desk.id, shift, dateStr);
-                        html += `<div class="schedule-cell">${assignment}</div>`;
-                    });
+                days.forEach(day => {
+                    const dateStr = this.formatDate(day);
+
+                    // Get assignments for all three shifts
+                    const firstAssignment = this.getAssignmentForDay(desk.id, 'first', dateStr);
+                    const secondAssignment = this.getAssignmentForDay(desk.id, 'second', dateStr);
+                    const thirdAssignment = this.getAssignmentForDay(desk.id, 'third', dateStr);
+
+                    // Combine all shifts in one cell
+                    html += `<div class="schedule-cell schedule-multi-shift">
+                        <div class="shift-line shift-first" title="First Shift (0600-1400)"><span class="shift-label">1st:</span> ${firstAssignment}</div>
+                        <div class="shift-line shift-second" title="Second Shift (1400-2200)"><span class="shift-label">2nd:</span> ${secondAssignment}</div>
+                        <div class="shift-line shift-third" title="Third Shift (2200-0600)"><span class="shift-label">3rd:</span> ${thirdAssignment}</div>
+                    </div>`;
                 });
             });
         });
