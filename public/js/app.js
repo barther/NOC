@@ -845,10 +845,10 @@ const App = {
         const html = `
             <div class="toolbar">
                 <div class="toolbar-left">
-                    <h2>Vacancies</h2>
+                    <h2>Dispatcher Absences</h2>
                 </div>
                 <div class="toolbar-right">
-                    <button class="btn btn-primary" onclick="App.showVacancyModal()">Create Vacancy</button>
+                    <button class="btn btn-primary" onclick="App.showVacancyModal()">Create Absence</button>
                 </div>
             </div>
             <div id="vacancies-container">
@@ -884,11 +884,12 @@ const App = {
                 <table>
                     <thead>
                         <tr>
-                            <th>Date</th>
+                            <th>Dispatcher</th>
+                            <th>Absence Period</th>
+                            <th>Absence Type</th>
                             <th>Desk</th>
                             <th>Shift</th>
-                            <th>Type</th>
-                            <th>Incumbent</th>
+                            <th>Reason</th>
                             <th>Status</th>
                             <th>Filled By</th>
                             <th>Actions</th>
@@ -898,20 +899,44 @@ const App = {
         `;
 
         if (this.data.vacancies.length === 0) {
-            html += '<tr><td colspan="8" class="text-center">No vacancies found</td></tr>';
+            html += '<tr><td colspan="9" class="text-center">No absences found</td></tr>';
         } else {
+            // Group vacancies by dispatcher + start_date + absence_type to show ranges
+            const grouped = {};
             this.data.vacancies.forEach(v => {
+                const key = `${v.incumbent_dispatcher_id}_${v.start_date}_${v.absence_type}`;
+                if (!grouped[key]) {
+                    grouped[key] = v;
+                }
+            });
+
+            Object.values(grouped).forEach(v => {
+                let dateDisplay;
+                if (v.absence_type === 'single_day') {
+                    dateDisplay = v.vacancy_date;
+                } else if (v.absence_type === 'date_range') {
+                    dateDisplay = `${v.start_date} to ${v.end_date}`;
+                } else if (v.absence_type === 'open_ended') {
+                    dateDisplay = `${v.start_date} - <strong>ONGOING</strong>`;
+                }
+
+                const absenceTypeLabel = v.absence_type === 'single_day' ? 'Single Day'
+                    : v.absence_type === 'date_range' ? 'Date Range'
+                    : 'Open-Ended';
+
                 html += `
                     <tr>
-                        <td>${v.vacancy_date}</td>
+                        <td><strong>${v.incumbent_name || '-'}</strong></td>
+                        <td>${dateDisplay}</td>
+                        <td>${absenceTypeLabel}</td>
                         <td>${v.desk_name}</td>
                         <td>${v.shift}</td>
                         <td>${v.vacancy_type}</td>
-                        <td>${v.incumbent_name || '-'}</td>
                         <td><span class="badge badge-${this.getStatusColor(v.status)}">${v.status}</span></td>
                         <td>${v.filled_by_name || '-'}</td>
                         <td>
-                            ${v.status === 'pending' ? `<button class="btn btn-success" onclick="App.fillVacancy(${v.id})">Fill</button>` : ''}
+                            ${v.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="App.fillVacancy(${v.id})">Fill</button>` : ''}
+                            ${v.absence_type === 'open_ended' ? `<button class="btn btn-warning btn-sm" onclick="App.closeOpenEndedAbsence(${v.incumbent_dispatcher_id}, '${v.incumbent_name}')">Close</button>` : ''}
                         </td>
                     </tr>
                 `;
@@ -2313,37 +2338,63 @@ const App = {
     },
 
     /**
-     * Show vacancy modal
+     * Show vacancy modal - Dispatcher-based absence tracking
      */
     showVacancyModal: function() {
-        const deskOptions = this.data.desks.map(d =>
-            `<option value="${d.id}">${d.division_name} - ${d.name}</option>`
-        ).join('');
+        const dispatcherOptions = this.data.dispatchers
+            .filter(d => d.active)
+            .map(d => `<option value="${d.id}">${d.employee_number} - ${d.first_name} ${d.last_name}</option>`)
+            .join('');
 
         const html = `
             <form id="vacancy-form" onsubmit="App.submitVacancyForm(event); return false;">
                 <div class="form-group">
-                    <label>Desk *</label>
-                    <select name="desk_id" required>
-                        <option value="">Select desk...</option>
-                        ${deskOptions}
+                    <label>Dispatcher *</label>
+                    <select name="dispatcher_id" required>
+                        <option value="">Select dispatcher...</option>
+                        ${dispatcherOptions}
+                    </select>
+                    <small style="color: #666; font-size: 0.85em; display: block; margin-top: 5px;">
+                        Desk and shift will be determined from dispatcher's current assignment
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label>Absence Type *</label>
+                    <select name="absence_type" id="absence-type-select" onchange="App.updateAbsenceDateFields()" required>
+                        <option value="">Select absence type...</option>
+                        <option value="single_day">Single Day (Mark Off)</option>
+                        <option value="date_range">Date Range (Vacation/Training)</option>
+                        <option value="open_ended">Open-Ended (Extended Leave)</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Shift *</label>
-                    <select name="shift" required>
-                        <option value="">Select shift...</option>
-                        <option value="first">First Shift (0600-1400)</option>
-                        <option value="second">Second Shift (1400-2200)</option>
-                        <option value="third">Third Shift (2200-0600)</option>
-                    </select>
-                </div>
-                <div class="form-group">
+
+                <div class="form-group" id="single-day-fields" style="display: none;">
                     <label>Date *</label>
-                    <input type="date" name="vacancy_date" required>
+                    <input type="date" name="single_date" id="single-date-input">
                 </div>
+
+                <div id="date-range-fields" style="display: none;">
+                    <div class="form-group">
+                        <label>Start Date *</label>
+                        <input type="date" name="range_start_date" id="range-start-date-input">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date *</label>
+                        <input type="date" name="range_end_date" id="range-end-date-input">
+                    </div>
+                </div>
+
+                <div class="form-group" id="open-ended-fields" style="display: none;">
+                    <label>Start Date *</label>
+                    <input type="date" name="open_start_date" id="open-start-date-input">
+                    <small style="color: #666; font-size: 0.85em; display: block; margin-top: 5px;">
+                        Leave will continue indefinitely until manually closed
+                    </small>
+                </div>
+
                 <div class="form-group">
-                    <label>Vacancy Type *</label>
+                    <label>Reason *</label>
                     <select name="vacancy_type" required>
                         <option value="sick">Sick</option>
                         <option value="vacation">Vacation</option>
@@ -2352,34 +2403,144 @@ const App = {
                         <option value="other">Other</option>
                     </select>
                 </div>
+
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="3" placeholder="Optional notes..."></textarea>
+                </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Vacancy</button>
+                    <button type="submit" class="btn btn-primary">Create Absence</button>
                 </div>
             </form>
         `;
-        this.showModal('Create Vacancy', html);
+        this.showModal('Create Dispatcher Absence', html);
+    },
+
+    /**
+     * Update absence date fields based on selected type
+     */
+    updateAbsenceDateFields: function() {
+        const absenceType = document.getElementById('absence-type-select').value;
+        const singleDayFields = document.getElementById('single-day-fields');
+        const dateRangeFields = document.getElementById('date-range-fields');
+        const openEndedFields = document.getElementById('open-ended-fields');
+
+        // Hide all date fields
+        singleDayFields.style.display = 'none';
+        dateRangeFields.style.display = 'none';
+        openEndedFields.style.display = 'none';
+
+        // Clear all date inputs
+        document.getElementById('single-date-input').value = '';
+        document.getElementById('range-start-date-input').value = '';
+        document.getElementById('range-end-date-input').value = '';
+        document.getElementById('open-start-date-input').value = '';
+
+        // Remove required attributes
+        document.getElementById('single-date-input').removeAttribute('required');
+        document.getElementById('range-start-date-input').removeAttribute('required');
+        document.getElementById('range-end-date-input').removeAttribute('required');
+        document.getElementById('open-start-date-input').removeAttribute('required');
+
+        // Show and require appropriate fields
+        if (absenceType === 'single_day') {
+            singleDayFields.style.display = 'block';
+            document.getElementById('single-date-input').setAttribute('required', 'required');
+        } else if (absenceType === 'date_range') {
+            dateRangeFields.style.display = 'block';
+            document.getElementById('range-start-date-input').setAttribute('required', 'required');
+            document.getElementById('range-end-date-input').setAttribute('required', 'required');
+        } else if (absenceType === 'open_ended') {
+            openEndedFields.style.display = 'block';
+            document.getElementById('open-start-date-input').setAttribute('required', 'required');
+        }
     },
 
     submitVacancyForm: async function(event) {
         event.preventDefault();
         const form = event.target;
+        const absenceType = form.absence_type.value;
         const vacancyType = form.vacancy_type.value;
+
+        let startDate, endDate;
+
+        // Get dates based on absence type
+        if (absenceType === 'single_day') {
+            startDate = form.single_date.value;
+            endDate = startDate;
+        } else if (absenceType === 'date_range') {
+            startDate = form.range_start_date.value;
+            endDate = form.range_end_date.value;
+        } else if (absenceType === 'open_ended') {
+            startDate = form.open_start_date.value;
+            endDate = null;
+        }
+
         const data = {
-            desk_id: form.desk_id.value,
-            shift: form.shift.value,
-            vacancy_date: form.vacancy_date.value,
+            dispatcher_id: form.dispatcher_id.value,
+            absence_type: absenceType,
             vacancy_type: vacancyType,
+            start_date: startDate,
+            end_date: endDate,
+            notes: form.notes.value,
             is_planned: vacancyType !== 'sick' && vacancyType !== 'other'
         };
 
         try {
-            await this.api('vacancy_create', data);
-            this.showSuccess('Vacancy created successfully');
+            const result = await this.api('vacancy_create', data);
+            const count = result.count || 1;
+            const message = count === 1
+                ? 'Absence created successfully'
+                : `${count} absence days created successfully`;
+            this.showSuccess(message);
             this.closeModal();
             this.loadVacancies();
         } catch (error) {
-            this.showError('Failed to create vacancy: ' + error.message);
+            this.showError('Failed to create absence: ' + error.message);
+        }
+    },
+
+    /**
+     * Close open-ended absence
+     */
+    closeOpenEndedAbsence: function(dispatcherId, dispatcherName) {
+        const html = `
+            <form id="close-absence-form" onsubmit="App.submitCloseAbsenceForm(event, ${dispatcherId}); return false;">
+                <p>Close open-ended absence for <strong>${dispatcherName}</strong></p>
+
+                <div class="form-group">
+                    <label>Return Date (Last Day of Absence) *</label>
+                    <input type="date" name="end_date" required>
+                    <small style="color: #666; font-size: 0.85em; display: block; margin-top: 5px;">
+                        Dispatcher will be scheduled to return the day after this date
+                    </small>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Close Absence</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Close Open-Ended Absence', html);
+    },
+
+    submitCloseAbsenceForm: async function(event, dispatcherId) {
+        event.preventDefault();
+        const form = event.target;
+
+        try {
+            await this.api('vacancy_close_open_ended', {
+                dispatcher_id: dispatcherId,
+                end_date: form.end_date.value
+            });
+            this.showSuccess('Open-ended absence closed successfully');
+            this.closeModal();
+            this.loadVacancies();
+        } catch (error) {
+            this.showError('Failed to close absence: ' + error.message);
         }
     },
 
