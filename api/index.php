@@ -125,7 +125,18 @@ try {
                     JOIN desks d ON ja.desk_id = d.id
                     WHERE ja.end_date IS NULL
                         AND ja.assignment_type = 'regular'
-                    ORDER BY ja.dispatcher_id";
+
+                    UNION
+
+                    SELECT DISTINCT
+                        rs.relief_dispatcher_id as dispatcher_id,
+                        d.name as desk_name,
+                        'relief' as shift
+                    FROM relief_schedules rs
+                    JOIN desks d ON rs.desk_id = d.id
+                    WHERE rs.active = 1
+
+                    ORDER BY dispatcher_id";
             $response['data'] = dbQueryAll($sql);
             $response['success'] = true;
             break;
