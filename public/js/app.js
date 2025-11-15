@@ -151,10 +151,21 @@ const App = {
         const startDate = this.formatDate(this.getMonday(today));
         const endDate = this.formatDate(new Date(new Date(startDate).getTime() + 6 * 24 * 60 * 60 * 1000));
 
+        // Default to desk view if not set
+        if (!this.scheduleViewMode) {
+            this.scheduleViewMode = 'desk';
+        }
+
         const html = `
             <div class="toolbar">
                 <div class="toolbar-left">
                     <h2>Weekly Schedule</h2>
+                    <div class="btn-group">
+                        <button class="btn ${this.scheduleViewMode === 'desk' ? 'btn-primary' : 'btn-secondary'}"
+                                onclick="App.switchScheduleView('desk')">By Desk</button>
+                        <button class="btn ${this.scheduleViewMode === 'dispatcher' ? 'btn-primary' : 'btn-secondary'}"
+                                onclick="App.switchScheduleView('dispatcher')">By Dispatcher</button>
+                    </div>
                 </div>
                 <div class="toolbar-right">
                     <input type="date" id="schedule-start-date" value="${startDate}">
@@ -171,6 +182,24 @@ const App = {
 
         document.getElementById('main-content').innerHTML = html;
         this.loadSchedule();
+    },
+
+    /**
+     * Switch between desk and dispatcher view
+     */
+    switchScheduleView: function(mode) {
+        this.scheduleViewMode = mode;
+        const startDateInput = document.getElementById('schedule-start-date');
+        const startDate = startDateInput ? startDateInput.value : this.formatDate(this.getMonday(new Date()));
+        this.renderScheduleGrid(startDate);
+
+        // Update button states
+        document.querySelectorAll('.btn-group .btn').forEach(btn => {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+        });
+        event.target.classList.remove('btn-secondary');
+        event.target.classList.add('btn-primary');
     },
 
     /**
@@ -199,9 +228,20 @@ const App = {
     },
 
     /**
-     * Render schedule grid
+     * Render schedule grid (dispatcher for view mode)
      */
     renderScheduleGrid: function(startDate) {
+        if (this.scheduleViewMode === 'dispatcher') {
+            this.renderDispatcherScheduleGrid(startDate);
+        } else {
+            this.renderDeskScheduleGrid(startDate);
+        }
+    },
+
+    /**
+     * Render desk-centric schedule grid
+     */
+    renderDeskScheduleGrid: function(startDate) {
         const days = [];
         // Force local timezone to avoid date shifting
         const current = new Date(startDate + 'T00:00:00');
@@ -211,7 +251,7 @@ const App = {
             current.setDate(current.getDate() + 1);
         }
 
-        console.log('Rendering schedule grid for 7 days:', days.map(d => this.formatDate(d)));
+        console.log('Rendering desk schedule grid for 7 days:', days.map(d => this.formatDate(d)));
 
         let html = '<div class="schedule-grid">';
 
@@ -257,6 +297,62 @@ const App = {
     },
 
     /**
+     * Render dispatcher-centric schedule grid
+     */
+    renderDispatcherScheduleGrid: function(startDate) {
+        const days = [];
+        // Force local timezone to avoid date shifting
+        const current = new Date(startDate + 'T00:00:00');
+
+        for (let i = 0; i < 7; i++) {
+            days.push(new Date(current));
+            current.setDate(current.getDate() + 1);
+        }
+
+        console.log('Rendering dispatcher schedule grid for 7 days:', days.map(d => this.formatDate(d)));
+
+        let html = '<div class="schedule-grid">';
+
+        // Header row
+        html += '<div class="schedule-cell schedule-header">Dispatcher</div>';
+        days.forEach(day => {
+            html += `<div class="schedule-cell schedule-header">${this.formatDayHeader(day)}</div>`;
+        });
+
+        // Get all active dispatchers sorted by seniority
+        const dispatchers = this.data.dispatchers.filter(d => d.active).sort((a, b) => a.seniority_rank - b.seniority_rank);
+
+        dispatchers.forEach(dispatcher => {
+            // One row per dispatcher
+            html += `<div class="schedule-cell schedule-desk">${dispatcher.employee_number} - ${dispatcher.first_name} ${dispatcher.last_name}</div>`;
+
+            days.forEach(day => {
+                const dateStr = this.formatDate(day);
+
+                // Find what this dispatcher is assigned to on this day
+                const assignments = this.getDispatcherAssignmentsForDay(dispatcher.id, dateStr);
+
+                if (assignments.length === 0) {
+                    html += `<div class="schedule-cell"><span class="badge badge-secondary">OFF</span></div>`;
+                } else {
+                    html += `<div class="schedule-cell schedule-multi-shift">`;
+                    assignments.forEach(assignment => {
+                        const shiftLabel = assignment.shift === 'first' ? '1st' : assignment.shift === 'second' ? '2nd' : '3rd';
+                        const shiftClass = `shift-${assignment.shift}`;
+                        html += `<div class="shift-line ${shiftClass}" title="${assignment.shift.charAt(0).toUpperCase() + assignment.shift.slice(1)} Shift">
+                            <span class="shift-label">${shiftLabel}:</span> ${assignment.desk_name}
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+            });
+        });
+
+        html += '</div>';
+        document.getElementById('schedule-container').innerHTML = html;
+    },
+
+    /**
      * Get assignment for a specific day
      */
     getAssignmentForDay: function(deskId, shift, date) {
@@ -275,6 +371,21 @@ const App = {
         }
 
         return `<div class="${className}">${assignment.dispatcher_name}</div>`;
+    },
+
+    /**
+     * Get all assignments for a specific dispatcher on a specific day
+     */
+    getDispatcherAssignmentsForDay: function(dispatcherId, date) {
+        const daySchedule = this.data.schedule[date] || [];
+        const assignments = daySchedule.filter(a => a.dispatcher_id == dispatcherId && a.assignment_type !== 'vacancy');
+
+        return assignments.map(a => ({
+            desk_id: a.desk_id,
+            desk_name: a.desk_name,
+            shift: a.shift,
+            assignment_type: a.assignment_type
+        }));
     },
 
     /**
