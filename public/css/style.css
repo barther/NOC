@@ -577,32 +577,269 @@ textarea:focus {
     border-color: var(--primary-color);
 }
 
-/* Responsive */
+/* Responsive - Mobile Optimizations */
 @media (max-width: 768px) {
-    .main-nav {
-        flex-wrap: wrap;
+    /* Container */
+    .container {
+        padding: 10px;
     }
 
+    /* Header */
+    header {
+        padding: 20px 15px;
+    }
+
+    header h1 {
+        font-size: 1.8em;
+    }
+
+    header .subtitle {
+        font-size: 0.95em;
+    }
+
+    header .version-stamp {
+        position: static;
+        display: block;
+        margin-top: 10px;
+        font-size: 0.7em;
+    }
+
+    /* Navigation */
+    .main-nav {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .nav-btn {
+        width: 100%;
+        padding: 14px 20px;
+        font-size: 1.05em;
+    }
+
+    /* Main Content */
+    #main-content {
+        padding: 15px;
+    }
+
+    /* Buttons */
+    .btn {
+        padding: 12px 16px;
+        font-size: 1em;
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .btn-group {
+        display: flex;
+        width: 100%;
+        margin-bottom: 15px;
+    }
+
+    .btn-group .btn {
+        flex: 1;
+        margin-bottom: 0;
+    }
+
+    /* Tables - Make scrollable */
+    .table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+        min-width: 600px;
+        font-size: 0.9em;
+    }
+
+    th, td {
+        padding: 8px;
+    }
+
+    /* Forms */
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    label {
+        font-size: 0.95em;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    textarea {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+
+    /* Grids */
     .grid-2,
     .grid-3,
     .grid-4 {
         grid-template-columns: 1fr;
+        gap: 15px;
     }
 
+    /* Schedule Grid - Horizontal scroll */
     .schedule-grid {
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         display: block;
+        white-space: nowrap;
     }
 
+    .schedule-grid > * {
+        display: inline-block;
+        white-space: normal;
+        vertical-align: top;
+    }
+
+    .schedule-cell {
+        min-width: 100px;
+        font-size: 0.85em;
+        padding: 8px 5px;
+        min-height: 60px;
+    }
+
+    .schedule-header {
+        font-size: 0.9em;
+    }
+
+    .shift-line {
+        font-size: 0.75em;
+        padding: 2px 4px;
+    }
+
+    .dispatcher-name {
+        font-size: 0.8em;
+        padding: 3px;
+    }
+
+    /* Toolbar */
     .toolbar {
         flex-direction: column;
         gap: 10px;
+        padding: 10px;
     }
 
     .toolbar-left,
     .toolbar-right {
         width: 100%;
-        justify-content: center;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .toolbar-left .btn,
+    .toolbar-right .btn {
+        width: 100%;
+    }
+
+    /* Filters Bar - Stack vertically */
+    .filters-bar {
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px;
+        align-items: stretch;
+    }
+
+    .filter-group {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 5px;
+    }
+
+    .filter-group label {
+        font-size: 0.9em;
+    }
+
+    .filter-group input[type="text"],
+    .filter-group select {
+        width: 100%;
+        min-width: auto;
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+
+    /* Modal */
+    .modal-content {
+        width: 95%;
+        max-height: 95vh;
+    }
+
+    .modal-header {
+        padding: 15px 20px;
+    }
+
+    .modal-header h2 {
+        font-size: 1.3em;
+    }
+
+    #modal-body {
+        padding: 20px;
+        max-height: calc(95vh - 70px);
+    }
+
+    .modal-footer {
+        flex-direction: column;
+    }
+
+    .modal-footer .btn {
+        width: 100%;
+    }
+
+    /* Cards */
+    .card {
+        padding: 15px;
+    }
+
+    .card-header {
+        font-size: 1.2em;
+    }
+
+    /* Alerts */
+    .alert {
+        padding: 12px 15px;
+        font-size: 0.95em;
+    }
+
+    /* Badges - Slightly larger for touch */
+    .badge {
+        padding: 6px 12px;
+        font-size: 0.9em;
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.5em;
+    }
+
+    header .subtitle {
+        font-size: 0.85em;
+    }
+
+    .nav-btn {
+        font-size: 0.95em;
+        padding: 12px 15px;
+    }
+
+    #main-content {
+        padding: 10px;
+    }
+
+    .schedule-cell {
+        min-width: 80px;
+        font-size: 0.75em;
+        padding: 5px 3px;
+    }
+
+    .shift-line {
+        font-size: 0.7em;
+    }
+
+    table {
+        font-size: 0.85em;
     }
 }
 
