@@ -31,6 +31,10 @@ require_once __DIR__ . '/../includes/Dispatcher.php';
 require_once __DIR__ . '/../includes/Schedule.php';
 require_once __DIR__ . '/../includes/VacancyEngine.php';
 require_once __DIR__ . '/../includes/Holddown.php';
+require_once __DIR__ . '/../includes/ATW.php';
+
+// Initialize ATW tables if they don't exist
+ATW::initializeTables();
 
 // Get request data
 $method = $_SERVER['REQUEST_METHOD'];
@@ -144,6 +148,18 @@ try {
                     FROM relief_schedules rs
                     JOIN desks d ON rs.desk_id = d.id
                     WHERE rs.active = 1
+
+                    UNION
+
+                    SELECT DISTINCT
+                        ja.dispatcher_id,
+                        aj.name as desk_name,
+                        'ATW' as shift
+                    FROM job_assignments ja
+                    JOIN atw_jobs aj ON ja.atw_job_id = aj.id
+                    WHERE ja.end_date IS NULL
+                        AND ja.assignment_type = 'atw'
+                        AND aj.active = 1
 
                     ORDER BY dispatcher_id";
             $response['data'] = dbQueryAll($sql);
@@ -276,6 +292,22 @@ try {
                 dbRollback();
                 throw $e;
             }
+            break;
+
+        case 'relief_get_dispatcher_schedule':
+            // Get relief schedule for a specific dispatcher (cross-desk)
+            $response['data'] = Schedule::getReliefScheduleForDispatcher($input['dispatcher_id']);
+            $response['success'] = true;
+            break;
+
+        case 'relief_set_dispatcher_schedule':
+            // Set full relief schedule for a dispatcher (cross-desk capable)
+            // Input: dispatcher_id, schedule array [{day: 0-6, desk_id: X, shift: 'first'/'second'/'third'}]
+            Schedule::setReliefScheduleForDispatcher(
+                $input['dispatcher_id'],
+                $input['schedule']
+            );
+            $response['success'] = true;
             break;
 
         case 'schedule_set_atw':
@@ -525,6 +557,82 @@ try {
 
         case 'holddown_bids':
             $response['data'] = Holddown::getBids($input['holddown_id']);
+            $response['success'] = true;
+            break;
+
+        // ============================================================
+        // ATW (AROUND-THE-WORLD) JOBS
+        // ============================================================
+        case 'atw_list':
+            $response['data'] = ATW::getAll();
+            $response['success'] = true;
+            break;
+
+        case 'atw_get':
+            $response['data'] = ATW::getById($input['id']);
+            $response['success'] = true;
+            break;
+
+        case 'atw_create':
+            $id = ATW::create($input['name'], $input['description'] ?? '');
+            $response['data'] = ['id' => $id];
+            $response['success'] = true;
+            break;
+
+        case 'atw_update':
+            ATW::update($input['id'], $input['name'], $input['description'] ?? '');
+            $response['success'] = true;
+            break;
+
+        case 'atw_delete':
+            ATW::delete($input['id']);
+            $response['success'] = true;
+            break;
+
+        case 'atw_get_schedule':
+            $response['data'] = ATW::getSchedule($input['atw_job_id']);
+            $response['success'] = true;
+            break;
+
+        case 'atw_set_schedule':
+            // Input: atw_job_id, schedule array [{day: 0-6, desk_id: X}]
+            $atwJobId = $input['atw_job_id'];
+            $schedule = $input['schedule'];
+
+            // Clear existing schedule
+            ATW::clearSchedule($atwJobId);
+
+            // Set new schedule
+            foreach ($schedule as $entry) {
+                if (isset($entry['desk_id']) && $entry['desk_id']) {
+                    ATW::setSchedule(
+                        $atwJobId,
+                        $entry['day'],
+                        $entry['desk_id'],
+                        $entry['shift'] ?? 'third'
+                    );
+                }
+            }
+
+            $response['success'] = true;
+            break;
+
+        case 'atw_assign_dispatcher':
+            ATW::assignDispatcher(
+                $input['atw_job_id'],
+                $input['dispatcher_id'],
+                $input['start_date'] ?? null
+            );
+            $response['success'] = true;
+            break;
+
+        case 'atw_get_assigned_dispatcher':
+            $response['data'] = ATW::getAssignedDispatcher($input['atw_job_id']);
+            $response['success'] = true;
+            break;
+
+        case 'atw_get_all_coverage':
+            $response['data'] = ATW::getAllCoverage();
             $response['success'] = true;
             break;
 

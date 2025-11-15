@@ -569,10 +569,142 @@ const App = {
                 <td><span id="assignment-${d.id}">Loading...</span></td>
                 <td>
                     <button class="btn btn-secondary" onclick="App.editDispatcher(${d.id})">Edit</button>
+                    <button class="btn btn-secondary" onclick="App.editDispatcherReliefSchedule(${d.id}, '${d.first_name} ${d.last_name}')">Relief Schedule</button>
                     <button class="btn btn-danger" onclick="App.deleteDispatcher(${d.id}, '${d.first_name} ${d.last_name}')">Delete</button>
                 </td>
             </tr>
         `).join('');
+    },
+
+    /**
+     * Edit dispatcher relief schedule (cross-desk capable)
+     */
+    editDispatcherReliefSchedule: async function(dispatcherId, dispatcherName) {
+        try {
+            // Load current relief schedule for this dispatcher
+            const schedule = await this.api('relief_get_dispatcher_schedule', { dispatcher_id: dispatcherId });
+
+            // Create schedule map
+            const scheduleMap = {};
+            schedule.forEach(s => {
+                scheduleMap[s.day_of_week] = {
+                    desk_id: s.desk_id,
+                    shift: s.shift
+                };
+            });
+
+            const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const desks = this.data.desks;
+            const shifts = ['first', 'second', 'third'];
+
+            const html = `
+                <p>Define the relief schedule for this dispatcher (can work different desks/shifts each day).</p>
+                <div class="alert alert-info" style="margin-bottom: 15px;">
+                    <strong>Cross-Desk Relief:</strong> This dispatcher can cover different desks on different days/shifts.
+                    Select the desk and shift for each day, or leave as "Off" for rest days.
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr style="background: var(--primary-color); color: white;">
+                                <th>Day</th>
+                                <th>Desk</th>
+                                <th>Shift</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${daysOfWeek.map((day, dayIndex) => {
+                                const current = scheduleMap[dayIndex] || {};
+                                return `
+                                <tr>
+                                    <td><strong>${day}</strong></td>
+                                    <td>
+                                        <select id="relief-desk-${dayIndex}" class="relief-desk-select" onchange="App.updateReliefShiftOptions(${dayIndex})">
+                                            <option value="">-- Off --</option>
+                                            ${desks.map(desk => `
+                                                <option value="${desk.id}" ${current.desk_id == desk.id ? 'selected' : ''}>
+                                                    ${desk.name} (${desk.code})
+                                                </option>
+                                            `).join('')}
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select id="relief-shift-${dayIndex}" class="relief-shift-select" ${!current.desk_id ? 'disabled' : ''}>
+                                            <option value="">--</option>
+                                            ${shifts.map(shift => `
+                                                <option value="${shift}" ${current.shift === shift ? 'selected' : ''}>
+                                                    ${shift.charAt(0).toUpperCase() + shift.slice(1)}
+                                                </option>
+                                            `).join('')}
+                                        </select>
+                                    </td>
+                                </tr>
+                            `}).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="alert alert-warning" style="margin-top: 15px;">
+                    <strong>Example "11 22 3" Pattern:</strong> Sun/Mon: 1st shift, Tue/Wed: 2nd shift, Thu: 3rd shift, Fri/Sat: Off
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="App.saveDispatcherReliefSchedule(${dispatcherId})">Save Schedule</button>
+                </div>
+            `;
+
+            this.showModal(`Relief Schedule: ${dispatcherName}`, html);
+        } catch (error) {
+            this.showError('Failed to load relief schedule: ' + error.message);
+        }
+    },
+
+    /**
+     * Update shift dropdown when desk is selected
+     */
+    updateReliefShiftOptions: function(dayIndex) {
+        const deskSelect = document.getElementById(`relief-desk-${dayIndex}`);
+        const shiftSelect = document.getElementById(`relief-shift-${dayIndex}`);
+
+        if (deskSelect.value) {
+            shiftSelect.disabled = false;
+            if (!shiftSelect.value) {
+                shiftSelect.value = 'first'; // Default to first shift
+            }
+        } else {
+            shiftSelect.disabled = true;
+            shiftSelect.value = '';
+        }
+    },
+
+    /**
+     * Save dispatcher relief schedule
+     */
+    saveDispatcherReliefSchedule: async function(dispatcherId) {
+        const schedule = [];
+
+        for (let day = 0; day <= 6; day++) {
+            const deskId = document.getElementById(`relief-desk-${day}`).value;
+            const shift = document.getElementById(`relief-shift-${day}`).value;
+
+            if (deskId && shift) {
+                schedule.push({
+                    day: day,
+                    desk_id: parseInt(deskId),
+                    shift: shift
+                });
+            }
+        }
+
+        try {
+            await this.api('relief_set_dispatcher_schedule', {
+                dispatcher_id: dispatcherId,
+                schedule: schedule
+            });
+            this.showSuccess('Relief schedule saved successfully');
+            this.closeModal();
+        } catch (error) {
+            this.showError('Failed to save relief schedule: ' + error.message);
+        }
     },
 
     /**
@@ -903,6 +1035,17 @@ const App = {
             </div>
 
             <div class="card mt-20">
+                <div class="card-header">ATW (Around-the-World) Jobs</div>
+                <div class="card-body">
+                    <p>Manage Around-the-World job assignments and their rotating desk schedules.</p>
+                    <button class="btn btn-primary" onclick="App.showATWJobModal()">Add ATW Job</button>
+                    <div id="atw-jobs-list" style="margin-top: 20px;">
+                        Loading ATW jobs...
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-20">
                 <div class="card-header">CSV Data Import</div>
                 <div class="card-body">
                     <p>Import dispatcher data from <strong>data.csv</strong> file (must be in the NOC root directory).</p>
@@ -923,6 +1066,300 @@ const App = {
         `;
 
         document.getElementById('main-content').innerHTML = html;
+        this.loadATWJobs();
+    },
+
+    /**
+     * Load and display ATW jobs
+     */
+    loadATWJobs: async function() {
+        try {
+            const jobs = await this.api('atw_list');
+            this.data.atwJobs = jobs;
+            this.renderATWJobsList();
+        } catch (error) {
+            document.getElementById('atw-jobs-list').innerHTML =
+                '<div class="alert alert-error">Failed to load ATW jobs: ' + error.message + '</div>';
+        }
+    },
+
+    /**
+     * Render ATW jobs list
+     */
+    renderATWJobsList: function() {
+        if (!this.data.atwJobs || this.data.atwJobs.length === 0) {
+            document.getElementById('atw-jobs-list').innerHTML =
+                '<p style="color: #7f8c8d; font-style: italic;">No ATW jobs defined yet.</p>';
+            return;
+        }
+
+        let html = '<div class="table-wrapper"><table><thead><tr><th>Name</th><th>Description</th><th>Assigned Dispatcher</th><th>Actions</th></tr></thead><tbody>';
+
+        this.data.atwJobs.forEach(job => {
+            html += `
+                <tr>
+                    <td><strong>${job.name}</strong></td>
+                    <td>${job.description || '-'}</td>
+                    <td id="atw-assigned-${job.id}">Loading...</td>
+                    <td>
+                        <button class="btn btn-secondary" onclick="App.editATWSchedule(${job.id}, '${job.name.replace(/'/g, "\\'")}')">Edit Schedule</button>
+                        <button class="btn btn-secondary" onclick="App.assignDispatcherToATW(${job.id}, '${job.name.replace(/'/g, "\\'")}')">Assign Dispatcher</button>
+                        <button class="btn btn-warning" onclick="App.editATWJob(${job.id})">Edit</button>
+                        <button class="btn btn-danger" onclick="App.deleteATWJob(${job.id}, '${job.name.replace(/'/g, "\\'")}')">Delete</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table></div>';
+        document.getElementById('atw-jobs-list').innerHTML = html;
+
+        // Load assigned dispatchers for each job
+        this.data.atwJobs.forEach(job => {
+            this.loadATWAssignment(job.id);
+        });
+    },
+
+    /**
+     * Load assigned dispatcher for an ATW job
+     */
+    loadATWAssignment: async function(atwJobId) {
+        try {
+            const assignment = await this.api('atw_get_assigned_dispatcher', { atw_job_id: atwJobId });
+            const cell = document.getElementById(`atw-assigned-${atwJobId}`);
+            if (cell) {
+                if (assignment && assignment.dispatcher_id) {
+                    cell.innerHTML = `${assignment.employee_number} - ${assignment.first_name} ${assignment.last_name}`;
+                } else {
+                    cell.innerHTML = '<span style="color: #e74c3c;">Unassigned</span>';
+                }
+            }
+        } catch (error) {
+            const cell = document.getElementById(`atw-assigned-${atwJobId}`);
+            if (cell) {
+                cell.innerHTML = '<span style="color: #e74c3c;">Error</span>';
+            }
+        }
+    },
+
+    /**
+     * Show modal to create/edit ATW job
+     */
+    showATWJobModal: function(jobId = null) {
+        const isEdit = jobId !== null;
+        const job = isEdit ? this.data.atwJobs.find(j => j.id === jobId) : null;
+
+        const title = isEdit ? 'Edit ATW Job' : 'Add ATW Job';
+        const html = `
+            <div class="form-group">
+                <label for="atw-name">Job Name</label>
+                <input type="text" id="atw-name" value="${isEdit ? job.name : ''}" placeholder="e.g., Gulf ATW" required>
+            </div>
+            <div class="form-group">
+                <label for="atw-description">Description</label>
+                <textarea id="atw-description" rows="3" placeholder="Optional description">${isEdit ? (job.description || '') : ''}</textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="App.saveATWJob(${jobId})">Save</button>
+            </div>
+        `;
+
+        this.showModal(title, html);
+    },
+
+    /**
+     * Save ATW job
+     */
+    saveATWJob: async function(jobId) {
+        const name = document.getElementById('atw-name').value.trim();
+        const description = document.getElementById('atw-description').value.trim();
+
+        if (!name) {
+            this.showError('Job name is required');
+            return;
+        }
+
+        try {
+            if (jobId) {
+                await this.api('atw_update', { id: jobId, name, description });
+                this.showSuccess('ATW job updated successfully');
+            } else {
+                await this.api('atw_create', { name, description });
+                this.showSuccess('ATW job created successfully');
+            }
+            this.closeModal();
+            this.loadATWJobs();
+        } catch (error) {
+            this.showError('Failed to save ATW job: ' + error.message);
+        }
+    },
+
+    /**
+     * Delete ATW job
+     */
+    deleteATWJob: async function(jobId, jobName) {
+        if (!confirm(`Are you sure you want to delete "${jobName}"? This will also remove its schedule.`)) {
+            return;
+        }
+
+        try {
+            await this.api('atw_delete', { id: jobId });
+            this.showSuccess('ATW job deleted successfully');
+            this.loadATWJobs();
+        } catch (error) {
+            this.showError('Failed to delete ATW job: ' + error.message);
+        }
+    },
+
+    /**
+     * Edit ATW schedule
+     */
+    editATWSchedule: async function(atwJobId, jobName) {
+        try {
+            // Load current schedule
+            const schedule = await this.api('atw_get_schedule', { atw_job_id: atwJobId });
+
+            // Create schedule map
+            const scheduleMap = {};
+            schedule.forEach(s => {
+                scheduleMap[s.day_of_week] = s.desk_id;
+            });
+
+            const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const desks = this.data.desks;
+
+            const html = `
+                <p>Define which desk this ATW job works on each day of the week (3rd shift).</p>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr style="background: var(--primary-color); color: white;">
+                                <th>Day</th>
+                                <th>Desk Assignment</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${daysOfWeek.map((day, dayIndex) => `
+                                <tr>
+                                    <td><strong>${day}</strong></td>
+                                    <td>
+                                        <select id="atw-desk-${dayIndex}" class="atw-desk-select">
+                                            <option value="">-- Off --</option>
+                                            ${desks.map(desk => `
+                                                <option value="${desk.id}" ${scheduleMap[dayIndex] == desk.id ? 'selected' : ''}>
+                                                    ${desk.name} (${desk.code})
+                                                </option>
+                                            `).join('')}
+                                        </select>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="App.saveATWSchedule(${atwJobId})">Save Schedule</button>
+                </div>
+            `;
+
+            this.showModal(`Edit Schedule: ${jobName}`, html);
+        } catch (error) {
+            this.showError('Failed to load ATW schedule: ' + error.message);
+        }
+    },
+
+    /**
+     * Save ATW schedule
+     */
+    saveATWSchedule: async function(atwJobId) {
+        const schedule = [];
+
+        for (let day = 0; day <= 6; day++) {
+            const deskId = document.getElementById(`atw-desk-${day}`).value;
+            if (deskId) {
+                schedule.push({
+                    day: day,
+                    desk_id: parseInt(deskId),
+                    shift: 'third'
+                });
+            }
+        }
+
+        try {
+            await this.api('atw_set_schedule', {
+                atw_job_id: atwJobId,
+                schedule: schedule
+            });
+            this.showSuccess('ATW schedule saved successfully');
+            this.closeModal();
+        } catch (error) {
+            this.showError('Failed to save schedule: ' + error.message);
+        }
+    },
+
+    /**
+     * Assign dispatcher to ATW job
+     */
+    assignDispatcherToATW: async function(atwJobId, jobName) {
+        const dispatchers = this.data.dispatchers.filter(d => d.active);
+
+        const html = `
+            <div class="form-group">
+                <label for="atw-dispatcher">Select Dispatcher</label>
+                <select id="atw-dispatcher" required>
+                    <option value="">-- Select Dispatcher --</option>
+                    ${dispatchers.map(d => `
+                        <option value="${d.id}">${d.employee_number} - ${d.first_name} ${d.last_name}</option>
+                    `).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="atw-start-date">Start Date</label>
+                <input type="date" id="atw-start-date" value="${new Date().toISOString().split('T')[0]}">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="App.saveATWAssignment(${atwJobId})">Assign</button>
+            </div>
+        `;
+
+        this.showModal(`Assign Dispatcher: ${jobName}`, html);
+    },
+
+    /**
+     * Save ATW assignment
+     */
+    saveATWAssignment: async function(atwJobId) {
+        const dispatcherId = document.getElementById('atw-dispatcher').value;
+        const startDate = document.getElementById('atw-start-date').value;
+
+        if (!dispatcherId) {
+            this.showError('Please select a dispatcher');
+            return;
+        }
+
+        try {
+            await this.api('atw_assign_dispatcher', {
+                atw_job_id: atwJobId,
+                dispatcher_id: parseInt(dispatcherId),
+                start_date: startDate
+            });
+            this.showSuccess('Dispatcher assigned successfully');
+            this.closeModal();
+            this.loadATWJobs();
+            await this.loadData(); // Refresh dispatchers to update assignments
+        } catch (error) {
+            this.showError('Failed to assign dispatcher: ' + error.message);
+        }
+    },
+
+    /**
+     * Edit ATW job
+     */
+    editATWJob: function(jobId) {
+        this.showATWJobModal(jobId);
     },
 
     /**
