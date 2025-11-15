@@ -47,6 +47,13 @@ class ATW {
             // Column might already exist, that's okay
         }
 
+        // Allow desk_id to be NULL for ATW assignments (they don't have a single desk)
+        try {
+            $pdo->exec("ALTER TABLE job_assignments MODIFY COLUMN desk_id INT NULL");
+        } catch (PDOException $e) {
+            // Column might already be nullable
+        }
+
         // Create indexes
         try {
             $pdo->exec("CREATE INDEX idx_atw_schedules_lookup ON atw_schedules(atw_job_id, day_of_week, active)");
