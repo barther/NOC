@@ -392,6 +392,15 @@ const App = {
      * Render Dispatchers View
      */
     renderDispatchersView: function() {
+        // Initialize filter/sort state if not exists
+        if (!this.dispatcherFilters) {
+            this.dispatcherFilters = {
+                search: '',
+                classification: 'all',
+                sortBy: 'seniority'
+            };
+        }
+
         const html = `
             <div class="toolbar">
                 <div class="toolbar-left">
@@ -399,6 +408,31 @@ const App = {
                 </div>
                 <div class="toolbar-right">
                     <button class="btn btn-primary" onclick="App.showDispatcherModal()">Add Dispatcher</button>
+                </div>
+            </div>
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <label>Search:</label>
+                    <input type="text" id="dispatcher-search" placeholder="Name or Employee #"
+                           value="${this.dispatcherFilters.search}"
+                           oninput="App.updateDispatcherFilter('search', this.value)">
+                </div>
+                <div class="filter-group">
+                    <label>Classification:</label>
+                    <select id="dispatcher-classification" onchange="App.updateDispatcherFilter('classification', this.value)">
+                        <option value="all" ${this.dispatcherFilters.classification === 'all' ? 'selected' : ''}>All</option>
+                        <option value="job_holder" ${this.dispatcherFilters.classification === 'job_holder' ? 'selected' : ''}>Job Holders</option>
+                        <option value="extra_board" ${this.dispatcherFilters.classification === 'extra_board' ? 'selected' : ''}>Extra Board</option>
+                        <option value="qualifying" ${this.dispatcherFilters.classification === 'qualifying' ? 'selected' : ''}>Qualifying</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Sort By:</label>
+                    <select id="dispatcher-sort" onchange="App.updateDispatcherFilter('sortBy', this.value)">
+                        <option value="seniority" ${this.dispatcherFilters.sortBy === 'seniority' ? 'selected' : ''}>Seniority</option>
+                        <option value="name" ${this.dispatcherFilters.sortBy === 'name' ? 'selected' : ''}>Name</option>
+                        <option value="employee_number" ${this.dispatcherFilters.sortBy === 'employee_number' ? 'selected' : ''}>Employee #</option>
+                    </select>
                 </div>
             </div>
             <table>
@@ -423,6 +457,14 @@ const App = {
     },
 
     /**
+     * Update dispatcher filter and re-render
+     */
+    updateDispatcherFilter: function(field, value) {
+        this.dispatcherFilters[field] = value;
+        document.getElementById('dispatchers-table-body').innerHTML = this.renderDispatchersTable();
+    },
+
+    /**
      * Render dispatchers table rows
      */
     renderDispatchersTable: function() {
@@ -430,7 +472,51 @@ const App = {
             return '<tr><td colspan="7" class="text-center">No dispatchers found</td></tr>';
         }
 
-        return this.data.dispatchers.map(d => `
+        // Apply filters
+        let filtered = this.data.dispatchers.filter(d => {
+            // Search filter
+            if (this.dispatcherFilters && this.dispatcherFilters.search) {
+                const search = this.dispatcherFilters.search.toLowerCase();
+                const fullName = `${d.first_name} ${d.last_name}`.toLowerCase();
+                const empNum = d.employee_number.toString();
+                if (!fullName.includes(search) && !empNum.includes(search)) {
+                    return false;
+                }
+            }
+
+            // Classification filter
+            if (this.dispatcherFilters && this.dispatcherFilters.classification !== 'all') {
+                if (d.classification !== this.dispatcherFilters.classification) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        // Apply sorting
+        if (this.dispatcherFilters && this.dispatcherFilters.sortBy) {
+            filtered.sort((a, b) => {
+                switch(this.dispatcherFilters.sortBy) {
+                    case 'seniority':
+                        return a.seniority_rank - b.seniority_rank;
+                    case 'name':
+                        const nameA = `${a.first_name} ${a.last_name}`.toLowerCase();
+                        const nameB = `${b.first_name} ${b.last_name}`.toLowerCase();
+                        return nameA.localeCompare(nameB);
+                    case 'employee_number':
+                        return parseInt(a.employee_number) - parseInt(b.employee_number);
+                    default:
+                        return 0;
+                }
+            });
+        }
+
+        if (filtered.length === 0) {
+            return '<tr><td colspan="7" class="text-center">No dispatchers match the current filters</td></tr>';
+        }
+
+        return filtered.map(d => `
             <tr>
                 <td>${d.seniority_rank}</td>
                 <td>${d.employee_number}</td>
@@ -450,6 +536,17 @@ const App = {
      * Render Desks View
      */
     renderDesksView: function() {
+        // Initialize filter state if not exists
+        if (!this.deskFilters) {
+            this.deskFilters = {
+                search: '',
+                division: 'all'
+            };
+        }
+
+        // Get unique divisions for filter
+        const divisions = [...new Set(this.data.desks.map(d => d.division_name))].sort();
+
         const html = `
             <div class="toolbar">
                 <div class="toolbar-left">
@@ -458,6 +555,23 @@ const App = {
                 <div class="toolbar-right">
                     <button class="btn btn-primary" onclick="App.showDeskModal()">Add Desk</button>
                     <button class="btn btn-secondary" onclick="App.showManageDivisionsModal()">Manage Divisions</button>
+                </div>
+            </div>
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <label>Search:</label>
+                    <input type="text" id="desk-search" placeholder="Desk name or code"
+                           value="${this.deskFilters.search}"
+                           oninput="App.updateDeskFilter('search', this.value)">
+                </div>
+                <div class="filter-group">
+                    <label>Division:</label>
+                    <select id="desk-division" onchange="App.updateDeskFilter('division', this.value)">
+                        <option value="all" ${this.deskFilters.division === 'all' ? 'selected' : ''}>All Divisions</option>
+                        ${divisions.map(div => `
+                            <option value="${div}" ${this.deskFilters.division === div ? 'selected' : ''}>${div}</option>
+                        `).join('')}
+                    </select>
                 </div>
             </div>
             <table>
@@ -470,13 +584,21 @@ const App = {
                         <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="desks-table-body">
                     ${this.renderDesksTable()}
                 </tbody>
             </table>
         `;
 
         document.getElementById('main-content').innerHTML = html;
+    },
+
+    /**
+     * Update desk filter and re-render
+     */
+    updateDeskFilter: function(field, value) {
+        this.deskFilters[field] = value;
+        document.getElementById('desks-table-body').innerHTML = this.renderDesksTable();
     },
 
     /**
@@ -487,7 +609,33 @@ const App = {
             return '<tr><td colspan="5" class="text-center">No desks found</td></tr>';
         }
 
-        return this.data.desks.map(desk => `
+        // Apply filters
+        let filtered = this.data.desks.filter(desk => {
+            // Search filter
+            if (this.deskFilters && this.deskFilters.search) {
+                const search = this.deskFilters.search.toLowerCase();
+                const name = desk.name.toLowerCase();
+                const code = desk.code.toLowerCase();
+                if (!name.includes(search) && !code.includes(search)) {
+                    return false;
+                }
+            }
+
+            // Division filter
+            if (this.deskFilters && this.deskFilters.division !== 'all') {
+                if (desk.division_name !== this.deskFilters.division) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            return '<tr><td colspan="5" class="text-center">No desks match the current filters</td></tr>';
+        }
+
+        return filtered.map(desk => `
             <tr>
                 <td>${desk.division_name}</td>
                 <td>${desk.name}</td>
