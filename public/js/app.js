@@ -67,6 +67,9 @@ const App = {
             case 'holddowns':
                 this.renderHolddownsView();
                 break;
+            case 'extraboard':
+                this.renderExtraBoardView();
+                break;
             case 'config':
                 this.renderConfigView();
                 break;
@@ -1046,6 +1049,286 @@ const App = {
 
         html += '</tbody></table></div>';
         document.getElementById('holddowns-container').innerHTML = html;
+    },
+
+    /**
+     * Render Extra Board View
+     */
+    renderExtraBoardView: function() {
+        const html = `
+            <div class="toolbar">
+                <div class="toolbar-left">
+                    <h2>Extra Board Management</h2>
+                </div>
+                <div class="toolbar-right">
+                    <button class="btn btn-primary" onclick="App.showExtraBoardAssignModal()">Assign to Extra Board</button>
+                </div>
+            </div>
+            <div id="extraboard-container">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading extra board...</p>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('main-content').innerHTML = html;
+        this.loadExtraBoard();
+    },
+
+    /**
+     * Load extra board assignments
+     */
+    loadExtraBoard: async function() {
+        try {
+            this.data.extraBoard = await this.api('extra_board_get_all', {});
+            this.renderExtraBoardTable();
+        } catch (error) {
+            this.showError('Failed to load extra board: ' + error.message);
+        }
+    },
+
+    /**
+     * Render extra board table
+     */
+    renderExtraBoardTable: function() {
+        let html = `
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Dispatcher</th>
+                            <th>Class</th>
+                            <th>Current Rest Days</th>
+                            <th>Cycle Start</th>
+                            <th>Assignment Start</th>
+                            <th>Assignment End</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        if (this.data.extraBoard.length === 0) {
+            html += '<tr><td colspan="8" class="text-center">No extra board assignments</td></tr>';
+        } else {
+            this.data.extraBoard.forEach(eb => {
+                const isActive = !eb.end_date || new Date(eb.end_date) >= new Date();
+                const statusLabel = isActive ? 'Active' : 'Ended';
+                const statusClass = isActive ? 'success' : 'secondary';
+
+                // Calculate current rest day pair
+                const today = new Date().toISOString().split('T')[0];
+                const restDayPairIndex = this.calculateRestDayPairIndex(eb.board_class, today, eb.cycle_start_date);
+                const restDayLabel = this.getRestDayPairLabel(restDayPairIndex);
+
+                html += `
+                    <tr>
+                        <td><strong>${eb.employee_number} - ${eb.first_name} ${eb.last_name}</strong></td>
+                        <td>Class ${eb.board_class}</td>
+                        <td>${restDayLabel}</td>
+                        <td>${eb.cycle_start_date}</td>
+                        <td>${eb.start_date}</td>
+                        <td>${eb.end_date || '<em>Ongoing</em>'}</td>
+                        <td><span class="badge badge-${statusClass}">${statusLabel}</span></td>
+                        <td>
+                            ${isActive ? `
+                                <button class="btn btn-secondary btn-sm" onclick="App.showExtraBoardSchedule(${eb.dispatcher_id}, '${eb.first_name} ${eb.last_name}')">View Schedule</button>
+                                <button class="btn btn-danger btn-sm" onclick="App.endExtraBoardAssignment(${eb.dispatcher_id}, '${eb.first_name} ${eb.last_name}')">End</button>
+                            ` : '-'}
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += '</tbody></table></div>';
+        document.getElementById('extraboard-container').innerHTML = html;
+    },
+
+    /**
+     * Calculate rest day pair index
+     */
+    calculateRestDayPairIndex: function(boardClass, date, cycleStartDate) {
+        const daysSinceCycle = Math.floor((new Date(date) - new Date(cycleStartDate)) / 86400000);
+        const weeksInCycle = Math.floor(daysSinceCycle / 7) % 6;
+        const classOffsets = {1: 0, 2: 2, 3: 4};
+        return (weeksInCycle + classOffsets[boardClass]) % 6;
+    },
+
+    /**
+     * Get rest day pair label
+     */
+    getRestDayPairLabel: function(pairIndex) {
+        const pairs = [
+            'Sat/Sun', 'Sun/Mon', 'Mon/Tue', 'Tue/Wed', 'Wed/Thu', 'Thu/Fri'
+        ];
+        return pairs[pairIndex];
+    },
+
+    /**
+     * Show assign to extra board modal
+     */
+    showExtraBoardAssignModal: function() {
+        const dispatcherOptions = this.data.dispatchers
+            .filter(d => d.active)
+            .map(d => `<option value="${d.id}">${d.employee_number} - ${d.first_name} ${d.last_name}</option>`)
+            .join('');
+
+        const html = `
+            <form id="extraboard-assign-form" onsubmit="App.submitExtraBoardAssignForm(event); return false;">
+                <div class="form-group">
+                    <label>Dispatcher *</label>
+                    <select name="dispatcher_id" required>
+                        <option value="">Select dispatcher...</option>
+                        ${dispatcherOptions}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Board Class *</label>
+                    <select name="board_class" required>
+                        <option value="">Select class...</option>
+                        <option value="1">Class 1 (Starts Sat/Sun)</option>
+                        <option value="2">Class 2 (Starts Tue/Wed)</option>
+                        <option value="3">Class 3 (Starts Thu/Fri)</option>
+                    </select>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Classes are staggered to ensure continuous coverage
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label>Assignment Start Date *</label>
+                    <input type="date" name="start_date" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Cycle Start Date (Optional)</label>
+                    <input type="date" name="cycle_start_date">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Leave blank to use assignment start date. Only change if mid-cycle.
+                    </small>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Assign to Extra Board</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Assign to Extra Board', html);
+    },
+
+    /**
+     * Submit extra board assignment
+     */
+    submitExtraBoardAssignForm: async function(event) {
+        event.preventDefault();
+        const form = event.target;
+
+        try {
+            await this.api('extra_board_assign', {
+                dispatcher_id: form.dispatcher_id.value,
+                board_class: parseInt(form.board_class.value),
+                start_date: form.start_date.value,
+                cycle_start_date: form.cycle_start_date.value || null
+            });
+            this.showSuccess('Dispatcher assigned to extra board');
+            this.closeModal();
+            this.loadExtraBoard();
+        } catch (error) {
+            this.showError('Failed to assign to extra board: ' + error.message);
+        }
+    },
+
+    /**
+     * End extra board assignment
+     */
+    endExtraBoardAssignment: async function(dispatcherId, dispatcherName) {
+        const endDate = prompt(`End extra board assignment for ${dispatcherName}?\n\nEnter end date (YYYY-MM-DD):`);
+
+        if (!endDate) return;
+
+        try {
+            await this.api('extra_board_end', {
+                dispatcher_id: dispatcherId,
+                end_date: endDate
+            });
+            this.showSuccess('Extra board assignment ended');
+            this.loadExtraBoard();
+        } catch (error) {
+            this.showError('Failed to end assignment: ' + error.message);
+        }
+    },
+
+    /**
+     * Show extra board rest day schedule
+     */
+    showExtraBoardSchedule: async function(dispatcherId, dispatcherName) {
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 42); // 6 weeks
+
+        try {
+            const schedule = await this.api('extra_board_get_rest_schedule', {
+                dispatcher_id: dispatcherId,
+                start_date: startDate.toISOString().split('T')[0],
+                end_date: endDate.toISOString().split('T')[0]
+            });
+
+            let html = `
+                <p><strong>${dispatcherName}</strong> - 6-Week Rest Day Schedule</p>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="schedule-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Day</th>
+                                <th>Week in Cycle</th>
+                                <th>Rest Day Pair</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+            schedule.forEach(day => {
+                const restPairLabel = this.getRestDayPairLabel(
+                    this.calculateRestDayPairIndex(
+                        schedule[0].week_in_cycle,
+                        day.date,
+                        startDate.toISOString().split('T')[0]
+                    )
+                );
+
+                html += `
+                    <tr style="${day.is_rest_day ? 'background-color: #ffe6e6;' : ''}">
+                        <td>${day.date}</td>
+                        <td>${dayNames[day.day_of_week]}</td>
+                        <td>Week ${day.week_in_cycle + 1}</td>
+                        <td>${restPairLabel}</td>
+                        <td>${day.is_rest_day ? '<strong>REST DAY</strong>' : 'Available'}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+                </div>
+            `;
+
+            this.showModal('Extra Board Schedule', html);
+        } catch (error) {
+            this.showError('Failed to load schedule: ' + error.message);
+        }
     },
 
     /**

@@ -28,6 +28,7 @@ requireAuth();
             <button class="nav-btn" data-view="desks">Desks</button>
             <button class="nav-btn" data-view="vacancies">Vacancies</button>
             <button class="nav-btn" data-view="holddowns">Hold-Downs</button>
+            <button class="nav-btn" data-view="extraboard">Extra Board</button>
             <button class="nav-btn" data-view="config">Settings</button>
         </nav>
 
