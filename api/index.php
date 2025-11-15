@@ -482,7 +482,9 @@ try {
             $startDate = $input['start_date'];
             $endDate = $input['end_date'] ?? null;
             $notes = $input['notes'] ?? '';
-            $isPlanned = $input['is_planned'] ?? ($vacancyType !== 'sick' && $vacancyType !== 'other');
+
+            // Ensure is_planned is a proper boolean/integer
+            $isPlanned = ($vacancyType !== 'sick' && $vacancyType !== 'other') ? 1 : 0;
 
             // Get dispatcher's current assignment to determine desk and shift
             $assignment = dbQueryOne(
