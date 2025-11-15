@@ -116,6 +116,20 @@ try {
             $response['success'] = true;
             break;
 
+        case 'dispatcher_get_all_assignments':
+            $sql = "SELECT
+                        ja.dispatcher_id,
+                        d.name as desk_name,
+                        ja.shift
+                    FROM job_assignments ja
+                    JOIN desks d ON ja.desk_id = d.id
+                    WHERE ja.end_date IS NULL
+                        AND ja.assignment_type = 'regular'
+                    ORDER BY ja.dispatcher_id";
+            $response['data'] = dbQueryAll($sql);
+            $response['success'] = true;
+            break;
+
         case 'dispatcher_create':
             $id = Dispatcher::create(
                 $input['employee_number'],

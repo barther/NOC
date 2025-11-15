@@ -319,8 +319,15 @@ const App = {
             html += `<div class="schedule-cell schedule-header">${this.formatDayHeader(day)}</div>`;
         });
 
-        // Get all active dispatchers sorted by seniority
-        const dispatchers = this.data.dispatchers.filter(d => d.active).sort((a, b) => a.seniority_rank - b.seniority_rank);
+        // Get all active dispatchers sorted by last name
+        const dispatchers = this.data.dispatchers.filter(d => d.active).sort((a, b) => {
+            const lastNameA = a.last_name.toLowerCase();
+            const lastNameB = b.last_name.toLowerCase();
+            if (lastNameA < lastNameB) return -1;
+            if (lastNameA > lastNameB) return 1;
+            // If last names are the same, sort by first name
+            return a.first_name.toLowerCase().localeCompare(b.first_name.toLowerCase());
+        });
 
         dispatchers.forEach(dispatcher => {
             // One row per dispatcher
@@ -454,6 +461,7 @@ const App = {
         `;
 
         document.getElementById('main-content').innerHTML = html;
+        this.loadDispatcherAssignments();
     },
 
     /**
@@ -462,6 +470,39 @@ const App = {
     updateDispatcherFilter: function(field, value) {
         this.dispatcherFilters[field] = value;
         document.getElementById('dispatchers-table-body').innerHTML = this.renderDispatchersTable();
+        this.loadDispatcherAssignments();
+    },
+
+    /**
+     * Load current assignments for all dispatchers
+     */
+    loadDispatcherAssignments: async function() {
+        try {
+            const assignments = await this.api('dispatcher_get_all_assignments');
+
+            // Update each dispatcher's assignment cell
+            assignments.forEach(assignment => {
+                const cell = document.getElementById(`assignment-${assignment.dispatcher_id}`);
+                if (cell) {
+                    if (assignment.desk_name) {
+                        const shiftLabel = assignment.shift.charAt(0).toUpperCase() + assignment.shift.slice(1);
+                        cell.innerHTML = `${assignment.desk_name} - ${shiftLabel}`;
+                    } else {
+                        cell.innerHTML = '<span class="badge badge-secondary">Unassigned</span>';
+                    }
+                }
+            });
+
+            // Mark any dispatchers not in the assignments list as unassigned
+            this.data.dispatchers.forEach(d => {
+                const cell = document.getElementById(`assignment-${d.id}`);
+                if (cell && cell.innerHTML === 'Loading...') {
+                    cell.innerHTML = '<span class="badge badge-secondary">Unassigned</span>';
+                }
+            });
+        } catch (error) {
+            console.error('Failed to load dispatcher assignments:', error);
+        }
     },
 
     /**
