@@ -4,6 +4,10 @@ require_once __DIR__ . '/config/version.php';
 
 // Require authentication
 requireAuth();
+
+// Get current user
+$currentUser = getCurrentUser();
+$isAdmin = isAdmin();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -19,7 +23,11 @@ requireAuth();
             <h1>NOC Scheduler</h1>
             <p class="subtitle">Network Operations Center - 24/7 Coverage Management</p>
             <div class="version-stamp">v<?php echo APP_VERSION; ?></div>
-            <a href="/logout.php" class="logout-link">Logout</a>
+            <div class="user-info">
+                <span class="username"><?php echo htmlspecialchars($currentUser['username']); ?></span>
+                <span class="user-role">(<?php echo $isAdmin ? 'Admin' : 'Read-Only'; ?>)</span>
+                <a href="/logout.php" class="logout-link">Logout</a>
+            </div>
         </header>
 
         <nav class="main-nav">
@@ -51,6 +59,16 @@ requireAuth();
         </div>
     </div>
 
+    <script>
+        // Pass user role to JavaScript
+        window.USER_ROLE = '<?php echo $currentUser['role']; ?>';
+        window.USER_IS_ADMIN = <?php echo $isAdmin ? 'true' : 'false'; ?>;
+        window.CURRENT_USER = {
+            id: <?php echo $currentUser['id']; ?>,
+            username: '<?php echo addslashes($currentUser['username']); ?>',
+            role: '<?php echo $currentUser['role']; ?>'
+        };
+    </script>
     <script src="public/js/app.js?v=<?php echo CACHE_VERSION; ?>"></script>
     <script>
         // Initialize the app

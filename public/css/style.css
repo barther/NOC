@@ -887,3 +887,69 @@ textarea:focus {
 .p-20 {
     padding: 20px;
 }
+
+/* User Info Styles */
+.user-info {
+    position: absolute;
+    bottom: 15px;
+    right: 20px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.user-info .username {
+    font-weight: 600;
+}
+
+.user-info .user-role {
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+
+.user-info .logout-link {
+    color: white;
+    text-decoration: none;
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+    margin-left: 10px;
+}
+
+.user-info .logout-link:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Read-Only Mode Styles */
+.read-only-notice {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+    padding: 12px 20px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.read-only-notice::before {
+    content: "ℹ️";
+    font-size: 1.2em;
+}
+
+/* Disable buttons in read-only mode */
+.read-only-mode .btn-primary,
+.read-only-mode .btn-danger,
+.read-only-mode .btn-warning,
+.read-only-mode button[onclick]:not(.nav-btn) {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.read-only-mode .btn-secondary {
+    /* Allow view/detail buttons to work */
+}
