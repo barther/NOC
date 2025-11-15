@@ -164,9 +164,41 @@ CREATE TABLE IF NOT EXISTS acd_rotation (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ACD 12-hour shift rotation (4-on/4-off)';
 
 -- Update desks table to support ACD 12-hour shifts
-ALTER TABLE desks
-ADD COLUMN shift_hours INT DEFAULT 8 COMMENT 'Shift duration: 8 or 12 hours',
-ADD COLUMN is_acd_desk TINYINT(1) DEFAULT 0 COMMENT 'If 1, this is an ACD desk (12-hour shifts)';
+SET @tablename = "desks";
+
+-- Add shift_hours column if it doesn't exist
+SET @columnname = "shift_hours";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE desks ADD COLUMN shift_hours INT DEFAULT 8 COMMENT 'Shift duration: 8 or 12 hours';",
+  "SELECT 1;"
+));
+PREPARE addShiftHours FROM @preparedStatement;
+EXECUTE addShiftHours;
+DEALLOCATE PREPARE addShiftHours;
+
+-- Add is_acd_desk column if it doesn't exist
+SET @columnname = "is_acd_desk";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE desks ADD COLUMN is_acd_desk TINYINT(1) DEFAULT 0 COMMENT 'If 1, this is an ACD desk (12-hour shifts)';",
+  "SELECT 1;"
+));
+PREPARE addIsAcdDesk FROM @preparedStatement;
+EXECUTE addIsAcdDesk;
+DEALLOCATE PREPARE addIsAcdDesk;
 
 -- ============================================================
 -- 3. Vacancy Fill Cost Tracking (Article 3(g) "least cost")
@@ -195,24 +227,200 @@ CREATE TABLE IF NOT EXISTS vacancy_fill_options (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Track all vacancy fill options and costs';
 
 -- Update vacancy_fills to track actual cost and penalties
-ALTER TABLE vacancy_fills
-ADD COLUMN pay_type ENUM('straight', 'overtime') DEFAULT 'straight',
-ADD COLUMN hours_worked DECIMAL(4,2) DEFAULT 8.00,
-ADD COLUMN calculated_cost DECIMAL(10,2) NULL COMMENT 'Actual cost of fill',
-ADD COLUMN improper_diversion TINYINT(1) DEFAULT 0 COMMENT 'If 1, violated order-of-call',
-ADD COLUMN penalty_hours DECIMAL(4,2) DEFAULT 0.00 COMMENT 'Penalty hours (4.0 for improper diversion)',
-ADD COLUMN penalty_cost DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Dollar value of penalty';
+SET @tablename = "vacancy_fills";
+
+-- Add pay_type column if it doesn't exist
+SET @columnname = "pay_type";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancy_fills ADD COLUMN pay_type ENUM('straight', 'overtime') DEFAULT 'straight';",
+  "SELECT 1;"
+));
+PREPARE addPayType FROM @preparedStatement;
+EXECUTE addPayType;
+DEALLOCATE PREPARE addPayType;
+
+-- Add hours_worked column if it doesn't exist
+SET @columnname = "hours_worked";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancy_fills ADD COLUMN hours_worked DECIMAL(4,2) DEFAULT 8.00;",
+  "SELECT 1;"
+));
+PREPARE addHoursWorked FROM @preparedStatement;
+EXECUTE addHoursWorked;
+DEALLOCATE PREPARE addHoursWorked;
+
+-- Add calculated_cost column if it doesn't exist
+SET @columnname = "calculated_cost";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancy_fills ADD COLUMN calculated_cost DECIMAL(10,2) NULL COMMENT 'Actual cost of fill';",
+  "SELECT 1;"
+));
+PREPARE addCalculatedCost FROM @preparedStatement;
+EXECUTE addCalculatedCost;
+DEALLOCATE PREPARE addCalculatedCost;
+
+-- Add improper_diversion column if it doesn't exist
+SET @columnname = "improper_diversion";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancy_fills ADD COLUMN improper_diversion TINYINT(1) DEFAULT 0 COMMENT 'If 1, violated order-of-call';",
+  "SELECT 1;"
+));
+PREPARE addImproperDiversion FROM @preparedStatement;
+EXECUTE addImproperDiversion;
+DEALLOCATE PREPARE addImproperDiversion;
+
+-- Add penalty_hours column if it doesn't exist
+SET @columnname = "penalty_hours";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancy_fills ADD COLUMN penalty_hours DECIMAL(4,2) DEFAULT 0.00 COMMENT 'Penalty hours (4.0 for improper diversion)';",
+  "SELECT 1;"
+));
+PREPARE addPenaltyHours FROM @preparedStatement;
+EXECUTE addPenaltyHours;
+DEALLOCATE PREPARE addPenaltyHours;
+
+-- Add penalty_cost column if it doesn't exist
+SET @columnname = "penalty_cost";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancy_fills ADD COLUMN penalty_cost DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Dollar value of penalty';",
+  "SELECT 1;"
+));
+PREPARE addPenaltyCost FROM @preparedStatement;
+EXECUTE addPenaltyCost;
+DEALLOCATE PREPARE addPenaltyCost;
 
 -- ============================================================
 -- 4. Enhanced Assignment Log for Cost Tracking
 -- ============================================================
 
-ALTER TABLE assignment_log
-ADD COLUMN hourly_rate DECIMAL(8,2) NULL COMMENT 'Rate at time of assignment',
-ADD COLUMN calculated_cost DECIMAL(10,2) NULL COMMENT 'Total cost for this assignment',
-ADD COLUMN gad_baseline_status ENUM('above', 'at', 'below') NULL COMMENT 'GAD baseline status at time of fill',
-ADD COLUMN forced TINYINT(1) DEFAULT 0 COMMENT 'If 1, dispatcher was forced (captured before leaving)',
-ADD COLUMN consecutive_day_count INT DEFAULT 0 COMMENT 'How many consecutive days at time of assignment';
+SET @tablename = "assignment_log";
+
+-- Add hourly_rate column if it doesn't exist
+SET @columnname = "hourly_rate";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE assignment_log ADD COLUMN hourly_rate DECIMAL(8,2) NULL COMMENT 'Rate at time of assignment';",
+  "SELECT 1;"
+));
+PREPARE addHourlyRate FROM @preparedStatement;
+EXECUTE addHourlyRate;
+DEALLOCATE PREPARE addHourlyRate;
+
+-- Add calculated_cost column if it doesn't exist
+SET @columnname = "calculated_cost";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE assignment_log ADD COLUMN calculated_cost DECIMAL(10,2) NULL COMMENT 'Total cost for this assignment';",
+  "SELECT 1;"
+));
+PREPARE addCalculatedCostAssignment FROM @preparedStatement;
+EXECUTE addCalculatedCostAssignment;
+DEALLOCATE PREPARE addCalculatedCostAssignment;
+
+-- Add gad_baseline_status column if it doesn't exist
+SET @columnname = "gad_baseline_status";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE assignment_log ADD COLUMN gad_baseline_status ENUM('above', 'at', 'below') NULL COMMENT 'GAD baseline status at time of fill';",
+  "SELECT 1;"
+));
+PREPARE addGadBaselineStatus FROM @preparedStatement;
+EXECUTE addGadBaselineStatus;
+DEALLOCATE PREPARE addGadBaselineStatus;
+
+-- Add forced column if it doesn't exist
+SET @columnname = "forced";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE assignment_log ADD COLUMN forced TINYINT(1) DEFAULT 0 COMMENT 'If 1, dispatcher was forced (captured before leaving)';",
+  "SELECT 1;"
+));
+PREPARE addForced FROM @preparedStatement;
+EXECUTE addForced;
+DEALLOCATE PREPARE addForced;
+
+-- Add consecutive_day_count column if it doesn't exist
+SET @columnname = "consecutive_day_count";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE assignment_log ADD COLUMN consecutive_day_count INT DEFAULT 0 COMMENT 'How many consecutive days at time of assignment';",
+  "SELECT 1;"
+));
+PREPARE addConsecutiveDayCount FROM @preparedStatement;
+EXECUTE addConsecutiveDayCount;
+DEALLOCATE PREPARE addConsecutiveDayCount;
 
 -- ============================================================
 -- 5. Dispatcher Pay Rates (for cost calculation)
@@ -254,19 +462,98 @@ CREATE TABLE IF NOT EXISTS gad_availability_log (
 -- ============================================================
 
 -- Add more detailed vacancy tracking
-ALTER TABLE vacancies
-ADD COLUMN filled_by_option_rank INT NULL COMMENT 'Which order-of-call step was used (1-7)',
-ADD COLUMN filled_by_option_type VARCHAR(50) NULL COMMENT 'Type of fill (gad, incumbent_ot, etc)',
-ADD COLUMN total_cost DECIMAL(10,2) NULL COMMENT 'Total cost including penalties';
+SET @tablename = "vacancies";
+
+-- Add filled_by_option_rank column if it doesn't exist
+SET @columnname = "filled_by_option_rank";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancies ADD COLUMN filled_by_option_rank INT NULL COMMENT 'Which order-of-call step was used (1-7)';",
+  "SELECT 1;"
+));
+PREPARE addFilledByOptionRank FROM @preparedStatement;
+EXECUTE addFilledByOptionRank;
+DEALLOCATE PREPARE addFilledByOptionRank;
+
+-- Add filled_by_option_type column if it doesn't exist
+SET @columnname = "filled_by_option_type";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancies ADD COLUMN filled_by_option_type VARCHAR(50) NULL COMMENT 'Type of fill (gad, incumbent_ot, etc)';",
+  "SELECT 1;"
+));
+PREPARE addFilledByOptionType FROM @preparedStatement;
+EXECUTE addFilledByOptionType;
+DEALLOCATE PREPARE addFilledByOptionType;
+
+-- Add total_cost column if it doesn't exist
+SET @columnname = "total_cost";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) = 0,
+  "ALTER TABLE vacancies ADD COLUMN total_cost DECIMAL(10,2) NULL COMMENT 'Total cost including penalties';",
+  "SELECT 1;"
+));
+PREPARE addTotalCost FROM @preparedStatement;
+EXECUTE addTotalCost;
+DEALLOCATE PREPARE addTotalCost;
 
 -- ============================================================
 -- 8. Indexes for Performance
 -- ============================================================
 
--- Optimize GAD queries
-CREATE INDEX idx_dispatchers_gad ON dispatchers(classification, gad_rest_group) WHERE classification = 'gad';
-CREATE INDEX idx_dispatchers_training ON dispatchers(training_protected, training_status);
-CREATE INDEX idx_dispatchers_consecutive ON dispatchers(consecutive_days_worked, last_work_date);
+-- Note: idx_dispatchers_gad index removed - gad_rest_group column removed in migration 005
+
+-- Create idx_dispatchers_training if it doesn't exist
+SET @indexname = 'idx_dispatchers_training';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      (table_name = 'dispatchers')
+      AND (table_schema = @dbname)
+      AND (index_name = @indexname)
+  ) = 0,
+  "CREATE INDEX idx_dispatchers_training ON dispatchers(training_protected, training_status);",
+  "SELECT 1;"
+));
+PREPARE createTrainingIndex FROM @preparedStatement;
+EXECUTE createTrainingIndex;
+DEALLOCATE PREPARE createTrainingIndex;
+
+-- Create idx_dispatchers_consecutive if it doesn't exist
+SET @indexname = 'idx_dispatchers_consecutive';
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      (table_name = 'dispatchers')
+      AND (table_schema = @dbname)
+      AND (index_name = @indexname)
+  ) = 0,
+  "CREATE INDEX idx_dispatchers_consecutive ON dispatchers(consecutive_days_worked, last_work_date);",
+  "SELECT 1;"
+));
+PREPARE createConsecutiveIndex FROM @preparedStatement;
+EXECUTE createConsecutiveIndex;
+DEALLOCATE PREPARE createConsecutiveIndex;
 
 -- ============================================================
 -- Migration Complete
