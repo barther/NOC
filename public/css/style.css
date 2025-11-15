@@ -64,6 +64,23 @@ header .version-stamp {
     font-family: 'Courier New', monospace;
 }
 
+header .logout-link {
+    position: absolute;
+    top: 40px;
+    right: 15px;
+    font-size: 0.85em;
+    color: white;
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 6px 14px;
+    border-radius: 5px;
+    transition: background 0.3s ease;
+}
+
+header .logout-link:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
 /* Navigation */
 .main-nav {
     display: flex;
@@ -602,6 +619,14 @@ textarea:focus {
         display: block;
         margin-top: 10px;
         font-size: 0.7em;
+    }
+
+    header .logout-link {
+        position: static;
+        display: inline-block;
+        margin-top: 10px;
+        margin-left: 10px;
+        font-size: 0.8em;
     }
 
     /* Navigation */
