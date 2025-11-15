@@ -370,11 +370,6 @@ textarea:focus {
     margin: 2px 0;
 }
 
-.dispatcher-name.atw {
-    background: var(--secondary-color);
-    color: white;
-}
-
 /* Status Badges */
 .badge {
     display: inline-block;

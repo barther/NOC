@@ -1360,7 +1360,7 @@ const App = {
             this.showSuccess('Dispatcher assigned successfully');
             this.closeModal();
             this.loadATWJobs();
-            await this.loadData(); // Refresh dispatchers to update assignments
+            await this.loadDispatchers(); // Refresh dispatchers to update assignments
         } catch (error) {
             this.showError('Failed to assign dispatcher: ' + error.message);
         }
