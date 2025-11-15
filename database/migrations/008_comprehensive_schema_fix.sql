@@ -109,6 +109,57 @@ PREPARE addCalculatedCost FROM @preparedStatement;
 EXECUTE addCalculatedCost;
 DEALLOCATE PREPARE addCalculatedCost;
 
+-- Make filled_by_dispatcher_id nullable (if it exists from schema.sql)
+SET @columnname = "filled_by_dispatcher_id";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE vacancy_fills MODIFY COLUMN filled_by_dispatcher_id INT NULL COMMENT 'Legacy column name';",
+  "SELECT 1;"
+));
+PREPARE modifyFilledByDispatcherId FROM @preparedStatement;
+EXECUTE modifyFilledByDispatcherId;
+DEALLOCATE PREPARE modifyFilledByDispatcherId;
+
+-- Make filled_at nullable (if it exists from schema.sql)
+SET @columnname = "filled_at";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE vacancy_fills MODIFY COLUMN filled_at DATETIME NULL COMMENT 'Legacy column name';",
+  "SELECT 1;"
+));
+PREPARE modifyFilledAt FROM @preparedStatement;
+EXECUTE modifyFilledAt;
+DEALLOCATE PREPARE modifyFilledAt;
+
+-- Make pay_type nullable (code doesn't always set it initially)
+SET @columnname = "pay_type";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE vacancy_fills MODIFY COLUMN pay_type ENUM('straight', 'overtime') NULL;",
+  "SELECT 1;"
+));
+PREPARE modifyPayType FROM @preparedStatement;
+EXECUTE modifyPayType;
+DEALLOCATE PREPARE modifyPayType;
+
 -- ============================================================
 -- 2. VACANCIES TABLE
 -- ============================================================
@@ -260,7 +311,10 @@ CREATE TABLE IF NOT EXISTS dispatcher_pay_rates (
 This migration creates all tables that the VacancyEngine code expects.
 
 Key fixes:
-1. vacancy_fills: Added dispatcher_id and filled_date (code uses these, schema had filled_by_dispatcher_id and filled_at)
+1. vacancy_fills:
+   - Added dispatcher_id and filled_date (code uses these, schema had filled_by_dispatcher_id and filled_at)
+   - Added hours_worked, calculated_cost columns
+   - Made filled_by_dispatcher_id, filled_at, and pay_type NULLABLE (allows code to use dispatcher_id/filled_date instead)
 2. vacancies: Added reason, filled_by, filled_at columns
 3. Created gad_availability_log, vacancy_fill_options, dispatcher_pay_rates if they don't exist
 
