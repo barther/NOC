@@ -461,6 +461,7 @@ const App = {
         `;
 
         document.getElementById('main-content').innerHTML = html;
+        this.loadDispatcherAssignments();
     },
 
     /**
@@ -469,6 +470,39 @@ const App = {
     updateDispatcherFilter: function(field, value) {
         this.dispatcherFilters[field] = value;
         document.getElementById('dispatchers-table-body').innerHTML = this.renderDispatchersTable();
+        this.loadDispatcherAssignments();
+    },
+
+    /**
+     * Load current assignments for all dispatchers
+     */
+    loadDispatcherAssignments: async function() {
+        try {
+            const assignments = await this.api('dispatcher_get_all_assignments');
+
+            // Update each dispatcher's assignment cell
+            assignments.forEach(assignment => {
+                const cell = document.getElementById(`assignment-${assignment.dispatcher_id}`);
+                if (cell) {
+                    if (assignment.desk_name) {
+                        const shiftLabel = assignment.shift.charAt(0).toUpperCase() + assignment.shift.slice(1);
+                        cell.innerHTML = `${assignment.desk_name} - ${shiftLabel}`;
+                    } else {
+                        cell.innerHTML = '<span class="badge badge-secondary">Unassigned</span>';
+                    }
+                }
+            });
+
+            // Mark any dispatchers not in the assignments list as unassigned
+            this.data.dispatchers.forEach(d => {
+                const cell = document.getElementById(`assignment-${d.id}`);
+                if (cell && cell.innerHTML === 'Loading...') {
+                    cell.innerHTML = '<span class="badge badge-secondary">Unassigned</span>';
+                }
+            });
+        } catch (error) {
+            console.error('Failed to load dispatcher assignments:', error);
+        }
     },
 
     /**
