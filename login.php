@@ -17,14 +17,15 @@ $error = '';
 
 // Handle login form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     $rememberMe = isset($_POST['remember_me']);
 
-    if (loginUser($password, $rememberMe)) {
+    if (loginUser($username, $password, $rememberMe)) {
         header('Location: /index.php');
         exit;
     } else {
-        $error = 'Invalid password';
+        $error = 'Invalid username or password';
     }
 }
 ?>
@@ -75,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--text-dark);
         }
 
+        .form-group input[type="text"],
         .form-group input[type="password"] {
             width: 100%;
             padding: 12px;
@@ -84,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-sizing: border-box;
         }
 
+        .form-group input[type="text"]:focus,
         .form-group input[type="password"]:focus {
             outline: none;
             border-color: var(--secondary-color);
@@ -168,8 +171,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <form method="POST" action="">
                 <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autofocus autocomplete="username">
+                </div>
+
+                <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required autofocus>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
 
                 <div class="checkbox-group">
