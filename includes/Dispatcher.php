@@ -45,22 +45,24 @@ class Dispatcher {
     /**
      * Create a new dispatcher
      * @param int $senioritySequence - Tiebreaker for same date (1=most senior, 2=next, etc)
+     * NOTE: Caller should call recalculateSeniorityRanks() after this to set correct ranks
      */
     public static function create($employeeNumber, $firstName, $lastName, $seniorityDate, $classification = 'extra_board', $senioritySequence = 1) {
-        // Calculate seniority rank
-        $seniorityRank = self::calculateNextSeniorityRank($seniorityDate, $senioritySequence);
+        // Use temporary high rank to avoid conflicts
+        // Caller must recalculate ranks to set correct values
+        $tempRank = 999999;
 
         $sql = "INSERT INTO dispatchers (employee_number, first_name, last_name, seniority_date, seniority_rank, seniority_sequence, classification)
                 VALUES (?, ?, ?, ?, ?, ?, ?)";
-        return dbInsert($sql, [$employeeNumber, $firstName, $lastName, $seniorityDate, $seniorityRank, $senioritySequence, $classification]);
+        return dbInsert($sql, [$employeeNumber, $firstName, $lastName, $seniorityDate, $tempRank, $senioritySequence, $classification]);
     }
 
     /**
      * Update dispatcher
      * @param int $senioritySequence - Tiebreaker for same date (1=most senior, 2=next, etc)
+     * NOTE: Caller should call recalculateSeniorityRanks() after this if date/sequence changed
      */
     public static function update($id, $employeeNumber, $firstName, $lastName, $seniorityDate, $classification, $active = true, $senioritySequence = null) {
-        // Recalculate seniority rank if date or sequence changed
         $current = self::getById($id);
 
         // If sequence not provided, keep current
@@ -68,11 +70,8 @@ class Dispatcher {
             $senioritySequence = $current['seniority_sequence'] ?? 1;
         }
 
-        if ($current['seniority_date'] !== $seniorityDate || $current['seniority_sequence'] != $senioritySequence) {
-            $seniorityRank = self::calculateNextSeniorityRank($seniorityDate, $senioritySequence);
-        } else {
-            $seniorityRank = $current['seniority_rank'];
-        }
+        // Keep current rank temporarily - caller will recalculate all ranks
+        $seniorityRank = $current['seniority_rank'];
 
         $sql = "UPDATE dispatchers
                 SET employee_number = ?, first_name = ?, last_name = ?, seniority_date = ?,
