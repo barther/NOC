@@ -1247,10 +1247,119 @@ const App = {
     },
 
     /**
-     * Edit desk
+     * Edit desk - Manage default rest days for each shift
      */
-    editDesk: function(id) {
-        alert('Edit desk: Use the Manage Assignments button to assign dispatchers to this desk.');
+    editDesk: async function(id) {
+        const desk = this.data.desks.find(d => d.id === id);
+        if (!desk) return;
+
+        // Load existing rest days
+        try {
+            const response = await fetch(`api/desk_rest_days.php?desk_id=${id}`, {
+                headers: { 'Cache-Control': 'no-cache' }
+            });
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+
+            const restDays = result.rest_days;
+
+            // Day names
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const shifts = [
+                { id: 'first', name: 'First Shift' },
+                { id: 'second', name: 'Second Shift' },
+                { id: 'third', name: 'Third Shift' },
+                { id: 'relief', name: 'Relief' }
+            ];
+
+            // Build checkboxes for each shift
+            const shiftsHtml = shifts.map(shift => {
+                const checkboxes = dayNames.map((day, index) => {
+                    const checked = restDays[shift.id].includes(index) ? 'checked' : '';
+                    return `
+                        <label style="display: inline-block; margin-right: 15px; margin-bottom: 8px;">
+                            <input type="checkbox" name="${shift.id}_restday" value="${index}" ${checked}>
+                            ${day}
+                        </label>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="form-group">
+                        <label style="font-weight: bold; display: block; margin-bottom: 8px;">${shift.name}:</label>
+                        <div style="padding-left: 10px;">
+                            ${checkboxes}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const html = `
+                <form id="rest-days-form" onsubmit="App.saveRestDays(event, ${id})">
+                    <div class="form-group">
+                        <p><strong>Desk:</strong> ${desk.name} (${desk.code})</p>
+                        <p style="color: #666; font-size: 14px;">
+                            Select the standard rest days for each shift at this desk.
+                            These will be applied when dispatchers are assigned to these positions.
+                        </p>
+                    </div>
+
+                    ${shiftsHtml}
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Rest Days</button>
+                        <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+                    </div>
+                </form>
+            `;
+
+            this.showModal(`Manage Rest Days - ${desk.name}`, html);
+
+        } catch (error) {
+            this.showError('Failed to load rest days: ' + error.message);
+        }
+    },
+
+    /**
+     * Save rest days for a desk
+     */
+    saveRestDays: async function(event, deskId) {
+        event.preventDefault();
+
+        const form = event.target;
+        const shifts = ['first', 'second', 'third', 'relief'];
+        const restDays = {};
+
+        // Collect checked days for each shift
+        shifts.forEach(shift => {
+            const checkboxes = form.querySelectorAll(`input[name="${shift}_restday"]:checked`);
+            restDays[shift] = Array.from(checkboxes).map(cb => parseInt(cb.value));
+        });
+
+        try {
+            const response = await fetch('api/desk_rest_days.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    desk_id: deskId,
+                    rest_days: restDays
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.closeModal();
+                this.showSuccess('Rest days saved successfully');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showError('Failed to save rest days: ' + error.message);
+        }
     },
 
     /**
