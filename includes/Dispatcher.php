@@ -44,43 +44,56 @@ class Dispatcher {
 
     /**
      * Create a new dispatcher
+     * @param int $senioritySequence - Tiebreaker for same date (1=most senior, 2=next, etc)
      */
-    public static function create($employeeNumber, $firstName, $lastName, $seniorityDate, $classification = 'extra_board') {
+    public static function create($employeeNumber, $firstName, $lastName, $seniorityDate, $classification = 'extra_board', $senioritySequence = 1) {
         // Calculate seniority rank
-        $seniorityRank = self::calculateNextSeniorityRank($seniorityDate);
+        $seniorityRank = self::calculateNextSeniorityRank($seniorityDate, $senioritySequence);
 
-        $sql = "INSERT INTO dispatchers (employee_number, first_name, last_name, seniority_date, seniority_rank, classification)
-                VALUES (?, ?, ?, ?, ?, ?)";
-        return dbInsert($sql, [$employeeNumber, $firstName, $lastName, $seniorityDate, $seniorityRank, $classification]);
+        $sql = "INSERT INTO dispatchers (employee_number, first_name, last_name, seniority_date, seniority_rank, seniority_sequence, classification)
+                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        return dbInsert($sql, [$employeeNumber, $firstName, $lastName, $seniorityDate, $seniorityRank, $senioritySequence, $classification]);
     }
 
     /**
      * Update dispatcher
+     * @param int $senioritySequence - Tiebreaker for same date (1=most senior, 2=next, etc)
      */
-    public static function update($id, $employeeNumber, $firstName, $lastName, $seniorityDate, $classification, $active = true) {
-        // Recalculate seniority rank if date changed
+    public static function update($id, $employeeNumber, $firstName, $lastName, $seniorityDate, $classification, $active = true, $senioritySequence = null) {
+        // Recalculate seniority rank if date or sequence changed
         $current = self::getById($id);
-        if ($current['seniority_date'] !== $seniorityDate) {
-            $seniorityRank = self::calculateNextSeniorityRank($seniorityDate);
+
+        // If sequence not provided, keep current
+        if ($senioritySequence === null) {
+            $senioritySequence = $current['seniority_sequence'] ?? 1;
+        }
+
+        if ($current['seniority_date'] !== $seniorityDate || $current['seniority_sequence'] != $senioritySequence) {
+            $seniorityRank = self::calculateNextSeniorityRank($seniorityDate, $senioritySequence);
         } else {
             $seniorityRank = $current['seniority_rank'];
         }
 
         $sql = "UPDATE dispatchers
                 SET employee_number = ?, first_name = ?, last_name = ?, seniority_date = ?,
-                    seniority_rank = ?, classification = ?, active = ?
+                    seniority_rank = ?, seniority_sequence = ?, classification = ?, active = ?
                 WHERE id = ?";
-        return dbExecute($sql, [$employeeNumber, $firstName, $lastName, $seniorityDate, $seniorityRank, $classification, $active ? 1 : 0, $id]);
+        return dbExecute($sql, [$employeeNumber, $firstName, $lastName, $seniorityDate, $seniorityRank, $senioritySequence, $classification, $active ? 1 : 0, $id]);
     }
 
     /**
-     * Calculate seniority rank for a given date
+     * Calculate seniority rank for a given date and sequence
+     * @param string $seniorityDate - Date of seniority
+     * @param int $senioritySequence - Tiebreaker for same date (1=most senior)
      */
-    private static function calculateNextSeniorityRank($seniorityDate) {
-        // Count how many active dispatchers have an earlier seniority date
+    private static function calculateNextSeniorityRank($seniorityDate, $senioritySequence = 1) {
+        // Count how many active dispatchers are more senior
+        // More senior = earlier date OR same date but lower sequence number
         $sql = "SELECT COUNT(*) as count FROM dispatchers
-                WHERE active = 1 AND seniority_date < ?";
-        $result = dbQueryOne($sql, [$seniorityDate]);
+                WHERE active = 1
+                  AND (seniority_date < ?
+                       OR (seniority_date = ? AND seniority_sequence < ?))";
+        $result = dbQueryOne($sql, [$seniorityDate, $seniorityDate, $senioritySequence]);
         return $result['count'] + 1;
     }
 
@@ -89,7 +102,11 @@ class Dispatcher {
      * @param bool $useTransaction - If false, skip transaction (caller handles it)
      */
     public static function recalculateSeniorityRanks($useTransaction = true) {
-        $sql = "SELECT id, seniority_date FROM dispatchers WHERE active = 1 ORDER BY seniority_date, id";
+        // Order by date first, then sequence within same date
+        $sql = "SELECT id, seniority_date, seniority_sequence
+                FROM dispatchers
+                WHERE active = 1
+                ORDER BY seniority_date, seniority_sequence, id";
         $dispatchers = dbQueryAll($sql);
 
         if ($useTransaction) {

@@ -122,7 +122,8 @@ try {
                 $input['first_name'],
                 $input['last_name'],
                 $input['seniority_date'],
-                $input['classification'] ?? 'extra_board'
+                $input['classification'] ?? 'extra_board',
+                $input['seniority_sequence'] ?? 1
             );
             $response['data'] = ['id' => $id];
             $response['success'] = true;
@@ -136,7 +137,8 @@ try {
                 $input['last_name'],
                 $input['seniority_date'],
                 $input['classification'],
-                $input['active'] ?? true
+                $input['active'] ?? true,
+                $input['seniority_sequence'] ?? null
             );
             $response['success'] = true;
             break;
