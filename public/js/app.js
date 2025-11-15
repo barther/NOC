@@ -227,6 +227,9 @@ const App = {
         Object.keys(groupedDesks).forEach(divisionName => {
             const desks = groupedDesks[divisionName];
 
+            // Add division header row spanning all columns
+            html += `<div class="schedule-cell schedule-division-header" style="grid-column: 1 / -1;">${divisionName}</div>`;
+
             desks.forEach(desk => {
                 // One row per desk showing all three shifts
                 html += `<div class="schedule-cell schedule-desk">${desk.name}</div>`;

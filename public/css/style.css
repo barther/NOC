@@ -276,6 +276,17 @@ textarea:focus {
     text-align: center;
 }
 
+.schedule-division-header {
+    background: var(--secondary-color);
+    color: white;
+    font-weight: 700;
+    font-size: 1.1em;
+    padding: 12px 15px;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .schedule-desk {
     background: var(--light-bg);
     font-weight: 600;
