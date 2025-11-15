@@ -2,24 +2,35 @@
 -- Change from 7 fixed groups (A-G) to 3 rotating classes matching Extra Board
 -- Fri/Sat is invalid as it spans pay period - use 6-week rotating pairs instead
 
--- Drop the old gad_rest_group column
-ALTER TABLE dispatchers
-DROP COLUMN IF EXISTS gad_rest_group;
+-- Drop old index first (if it exists)
+DROP INDEX IF EXISTS idx_dispatchers_gad ON dispatchers;
+
+-- Check if gad_rest_group column exists and drop it
+SET @dbname = DATABASE();
+SET @tablename = "dispatchers";
+SET @columnname = "gad_rest_group";
+SET @preparedStatement = (SELECT IF(
+  (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE
+      (table_name = @tablename)
+      AND (table_schema = @dbname)
+      AND (column_name = @columnname)
+  ) > 0,
+  "ALTER TABLE dispatchers DROP COLUMN gad_rest_group;",
+  "SELECT 1;"
+));
+PREPARE alterIfExists FROM @preparedStatement;
+EXECUTE alterIfExists;
+DEALLOCATE PREPARE alterIfExists;
 
 -- Add new columns for rotating rest day system
 ALTER TABLE dispatchers
-ADD COLUMN gad_rest_class TINYINT(1) NULL COMMENT 'GAD rest day class (1-3, similar to Extra Board)',
-ADD COLUMN gad_cycle_start_date DATE NULL COMMENT 'Start date of 6-week rest day cycle';
+ADD COLUMN IF NOT EXISTS gad_rest_class TINYINT(1) NULL COMMENT 'GAD rest day class (1-3, similar to Extra Board)',
+ADD COLUMN IF NOT EXISTS gad_cycle_start_date DATE NULL COMMENT 'Start date of 6-week rest day cycle';
 
--- Drop old index
-DROP INDEX IF EXISTS idx_dispatchers_gad ON dispatchers;
-
--- Create new index
-CREATE INDEX idx_dispatchers_gad ON dispatchers(classification, gad_rest_class) WHERE classification = 'gad';
-
--- Add check constraint to ensure valid class values
-ALTER TABLE dispatchers
-ADD CONSTRAINT chk_gad_rest_class CHECK (gad_rest_class IS NULL OR gad_rest_class IN (1, 2, 3));
+-- Create new index (conditional indexes with WHERE not supported in MySQL, using regular index)
+CREATE INDEX idx_dispatchers_gad_class ON dispatchers(classification, gad_rest_class);
 
 -- Comments explaining the new system
 /*
@@ -35,4 +46,7 @@ Class Offsets:
 - Class 3: Starts at Thu/Fri
 
 This ensures no two classes have overlapping rest days.
+
+Note: MySQL CHECK constraints are enforced in MySQL 8.0.16+
+For older versions, the application code enforces the constraint.
 */
